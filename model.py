@@ -6,7 +6,7 @@ import torchvision.transforms as transforms
 import config
 
 class Discriminator(nn.Module):
-    def __init__(self, vocab_size, chpt_folder):
+    def __init__(self, vocab_size):
         super(Discriminator, self).__init__()
         self.vocab_size = vocab_size
         self.embedding = nn.Embedding(vocab_size, config.embedding_dim)
@@ -17,16 +17,20 @@ class Discriminator(nn.Module):
 
 
     def forward(self, x, y):
+        x = torch.tensor(x)
+        y = torch.tensor(y)
         state_x = self.encode(self.passage_conv0, self.passage_conv1, x)
-
         batch_size = y.shape[0]
         num_questions = y.shape[1]
         y = y.reshape([batch_size*num_questions, -1])
-        mask = torch.sum(y != 0, -1)
+        mask = y != 0
+        length = torch.sum(mask, -1)
+        mask = length != 0
         state_y = self.encode(self.question_conv0, self.question_conv1, y)
-        state_x = staet_x.repeat(1, num_questions).reshape(y.shape)
-        similarity = torch.sum(state_x * state_y, -1) * mask
-        return similarity
+        state_x = state_x.repeat(1, num_questions).reshape([batch_size*num_questions, -1])
+        similarity = torch.sum(state_x * state_y, -1) * mask.float()
+        similarity = similarity.reshape([batch_size, num_questions])
+        return similarity, torch.sum(mask)
 
 
     def encode(self, convs0, convs1, text):
