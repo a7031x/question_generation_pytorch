@@ -69,6 +69,7 @@ class TrainFeeder(Feeder):
             self.prepare_data(self.dataset.dev_set)
             self.keep_prob = 1.0
         self.cursor = 0
+        self.iteration = 1
         self.size = len(self.data)
 
 
@@ -79,6 +80,14 @@ class TrainFeeder(Feeder):
             for question in questions:
                 r.add(tuple(question))
         self.questions = [list(q) for q in r]
+
+
+    def state(self):
+        return self.iteration, self.cursor
+
+
+    def load_state(self, state):
+        self.iteration, self.cursor = state
 
 
     def create_record(self, example):
@@ -154,6 +163,9 @@ class TrainFeeder(Feeder):
 
 
     def next(self, batch_size=config.batch_size):
+        if self.eof():
+            self.iteration += 1
+            self.cursor = 0
         size = min(self.size - self.cursor, batch_size)
         batch = self.data[self.cursor:self.cursor+size]
         batch_pid = []
