@@ -33,15 +33,14 @@ class Discriminator(nn.Module):
 
     def encode_embedding(self, convs, embed):
         x = torch.transpose(embed, 1, 2)
-        for module in convs:
-            x = module(x)
+        x = convs(x)
         encoding = torch.transpose(x, 1, 2)
         output = torch.sum(encoding, 1)
         return output
 
 
     def cnn_layers(self, num_layers, kernel_size, out_channels):
-        modules = nn.ModuleList()
+        modules = nn.Sequential()
         for i in range(num_layers):
             conv = nn.Conv1d(config.embedding_dim if i == 0 else out_channels, out_channels, kernel_size, padding=kernel_size//2)
             modules.add_module('conv_{}'.format(i), conv)
