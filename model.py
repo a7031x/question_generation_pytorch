@@ -15,22 +15,25 @@ class Discriminator(nn.Module):
 
 
     def forward(self, x, y):
-        state_x = self.encode(self.passage_conv0, self.passage_conv1, x)
+        state_x = self.encode_embedding2(self.passage_conv0, self.passage_conv1, self.embedding(x))
         batch_size = y.shape[0]
         num_questions = y.shape[1]
         y = y.view(batch_size*num_questions, -1)
         mask = y != 0
         length = torch.sum(mask, -1)
         mask = length != 0
-        state_y = self.encode(self.question_conv0, self.question_conv1, y)
+        state_y = self.encode_embedding2(self.question_conv0, self.question_conv1, self.embedding(y))
         state_x = state_x.repeat(1, num_questions).view(batch_size*num_questions, -1)
         similarity = torch.sum(state_x * state_y, -1) * mask.float()
         similarity = similarity.view(batch_size, num_questions)
         return similarity, torch.sum(mask)
 
 
-    def encode(self, convs0, convs1, text):
-        embed = self.embedding(text)
+    def encode_question_embedding(self, embed):
+        return self.encode_embedding2(self.question_conv0, self.question_conv1, embed)
+
+
+    def encode_embedding2(self, convs0, convs1, embed):
         state0 = self.encode_embedding(convs0, embed)
         state1 = self.encode_embedding(convs1, embed)
         state = torch.cat([state0, state1], -1)
@@ -52,6 +55,16 @@ class Discriminator(nn.Module):
             modules.add_module('conv_{}'.format(i), conv)
             modules.add_module('tanh_{}'.format(i), nn.Tanh())
         return modules
+
+
+class Generator(nn.Module):
+    def __init__(self, embedding):
+        super(Generator, self).__init__()
+        self.embedding = embedding
+
+
+    def forward(self, x):
+        embed = self.embedding(x)
 
 
 if __name__ == '__main__':
