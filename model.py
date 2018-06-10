@@ -18,8 +18,14 @@ class Discriminator(nn.Module):
 
     def forward(self, x, y):
         state_x = self.encode(self.passage_conv0, self.passage_conv1, x)
+
+        batch_size = y.shape[0]
+        num_questions = y.shape[1]
+        y = y.reshape([batch_size*num_questions, -1])
+        mask = torch.sum(y != 0, -1)
         state_y = self.encode(self.question_conv0, self.question_conv1, y)
-        similarity = torch.sum(state_x * state_y, -1)
+        state_x = staet_x.repeat(1, num_questions).reshape(y.shape)
+        similarity = torch.sum(state_x * state_y, -1) * mask
         return similarity
 
 
