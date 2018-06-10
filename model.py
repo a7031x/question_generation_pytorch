@@ -1,8 +1,6 @@
 import torch
-import torchvision
 import torch.nn as nn
 import numpy as np
-import torchvision.transforms as transforms
 import config
 
 class Discriminator(nn.Module):
@@ -20,14 +18,14 @@ class Discriminator(nn.Module):
         state_x = self.encode(self.passage_conv0, self.passage_conv1, x)
         batch_size = y.shape[0]
         num_questions = y.shape[1]
-        y = y.reshape([batch_size*num_questions, -1])
+        y = y.view(batch_size*num_questions, -1)
         mask = y != 0
         length = torch.sum(mask, -1)
         mask = length != 0
         state_y = self.encode(self.question_conv0, self.question_conv1, y)
-        state_x = state_x.repeat(1, num_questions).reshape([batch_size*num_questions, -1])
+        state_x = state_x.repeat(1, num_questions).view(batch_size*num_questions, -1)
         similarity = torch.sum(state_x * state_y, -1) * mask.float()
-        similarity = similarity.reshape([batch_size, num_questions])
+        similarity = similarity.view(batch_size, num_questions)
         return similarity, torch.sum(mask)
 
 
