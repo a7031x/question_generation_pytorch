@@ -17,8 +17,6 @@ class Discriminator(nn.Module):
 
 
     def forward(self, x, y):
-        x = torch.tensor(x)
-        y = torch.tensor(y)
         state_x = self.encode(self.passage_conv0, self.passage_conv1, x)
         batch_size = y.shape[0]
         num_questions = y.shape[1]
