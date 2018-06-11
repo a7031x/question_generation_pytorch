@@ -1,5 +1,5 @@
-from data import Dataset, TrainFeeder
-from model import Discriminator
+from data import Dataset, TrainFeeder, align2d, align3d
+from model import Discriminator, Generator
 import numpy as np
 import os
 import config
@@ -8,57 +8,106 @@ import utils
 
 ckpt_path = os.path.join(config.checkpoint_folder, 'model.ckpt')
 
-def print_prediction(feeder, similarity, pids, qids, labels, number):
+def print_prediction(feeder, similarity, pids, qids, labels, number=None):
+    if number is None:
+        number = len(pids)
     for k in range(min(len(pids), number)):
         pid, qid, sim, lab = pids[k], qids[k], similarity[k], labels[k]
         passage = feeder.ids_to_sent(pid)
-        questions = [feeder.ids_to_sent(q) for q in qid]
         print(passage)
-        for q,s,l in zip(questions, 1/(1+np.exp(-np.array(sim))), lab):
-            if q:
-                print(' {} {:>.4F}: {}'.format(l, s, q))
+        if isinstance(lab, list):
+            questions = [feeder.ids_to_sent(q) for q in qid]
+            for q,s,l in zip(questions, sim, lab):
+                if q:
+                    print(' {} {:>.4F}: {}'.format(l, s, q))
+        else:
+            question = feeder.ids_to_sent(qid)
+            print(' {} {:>.4F}: {}'.format(lab, sim, question))
 
 
-def run_discriminator_epoch(model, feeder, criterion, optimizer, batches):
+def run_discriminator_epoch(generator, discriminator, feeder, criterion, optimizer, batches):
     nbatch = 0 
     while nbatch < batches:
         pids, qids, labels, _ = feeder.next()
+        batch_size = len(pids)
         nbatch += 1
         x = torch.tensor(pids).cuda()
         y = torch.tensor(qids).cuda()
-        similarity, count = model(x, y)
+        similarity, count = discriminator(x, y)
+        question_embedding, _ = generator(x)
+        generated_similarity = discriminator.compute_similarity(x, question_embedding)        
+        generation_label = torch.tensor([0]*batch_size).cuda().float()
+        discriminator_loss = criterion(similarity, torch.tensor(labels).cuda().float())/count.float()
+        generator_loss = criterion(generated_similarity, generation_label)/torch.tensor(batch_size).cuda().float()
+        loss = discriminator_loss + generator_loss
         optimizer.zero_grad()
-        loss = criterion(similarity, torch.tensor(labels).cuda().float())
         loss.backward()
         optimizer.step()
-
-        loss, similarity, count = loss.tolist(), similarity.tolist(), count.tolist()
+        loss, similarity = loss.tolist(), torch.sigmoid(similarity).tolist()
         print_prediction(feeder, similarity, pids, qids, labels, 1)
-        print('------ITERATION {}, {}/{}, loss: {:>.4F}'.format(feeder.iteration, feeder.cursor, feeder.size, loss/count))
-        if nbatch % 10 == 0:
-            utils.mkdir(config.checkpoint_folder)
-            torch.save({
-                'model': model.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                'feeder': feeder.state()
-                }, ckpt_path)
-            print('MODEL SAVED.')
+        print('------ITERATION {}, {}/{}, loss: {:>.4F}+{:>.4F}={:>.4F}'.format(
+            feeder.iteration, feeder.cursor, feeder.size, discriminator_loss, generator_loss, loss))
 
 
-def train(auto_stop):
+def run_generator_epoch(generator, discriminator, feeder, criterion, optimizer, batches):
+    nbatch = 0
+    while nbatch < batches:
+        pids, qids, _, _ = feeder.next(align=False)
+        batch_size = len(pids)
+        nbatch += 1
+        x = [[config.SOS_ID]+s+[config.EOS_ID] for s in pids]
+        x = align2d(x)
+        x = torch.tensor(x).cuda()
+        question_embedding, gids = generator(x)
+        gids = gids.tolist()
+        similarity = discriminator.compute_similarity(x, question_embedding)
+        label = torch.tensor([1]*batch_size).cuda().float()
+        optimizer.zero_grad()        
+        loss = criterion(similarity, label)
+        loss.backward()
+        emb0 = generator.embedding.weight.view(-1).tolist()
+        generator.embedding.zero_grad()
+        optimizer.step()
+        emb1 = generator.embedding.weight.view(-1).tolist()
+        for s, t in zip(emb0, emb1):
+            assert s == t
+        loss, similarity = (loss/batch_size).tolist(), torch.sigmoid(similarity).tolist()
+        print_prediction(feeder, similarity, [q[0] for q in qids], gids, label)
+        print('------ITERATION {}, {}/{}, loss: {:>.4F}'.format(feeder.iteration, feeder.cursor, feeder.size, loss))
+
+
+def train(auto_stop, steps=100):
     dataset = Dataset()
-    feeder = TrainFeeder(dataset)
-    model = Discriminator(len(dataset.ci2n)).cuda()
+    discriminator_feeder = TrainFeeder(dataset)
+    generator_feeder = TrainFeeder(dataset)
+    discriminator = Discriminator(len(dataset.ci2n)).cuda()
+    generator = Generator(discriminator.embedding).cuda()
     criterion = torch.nn.BCEWithLogitsLoss(size_average=False)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-    feeder.prepare('train')
+    discriminator_optimizer = torch.optim.Adam(discriminator.parameters(), lr=1e-4)
+    generator_optimizer = torch.optim.Adam(generator.parameters(), lr=1e-4)
+    discriminator_feeder.prepare('train')
+    generator_feeder.prepare('train')
     if os.path.isfile(ckpt_path):
         ckpt = torch.load(ckpt_path)
-        model.load_state_dict(ckpt['model'])
-        optimizer.load_state_dict(ckpt['optimizer'])
-        feeder.load_state(ckpt['feeder'])
+        discriminator.load_state_dict(ckpt['discriminator'])
+        generator.load_state_dict(ckpt['generator'])
+        discriminator_optimizer.load_state_dict(ckpt['discriminator_optimizer'])
+        generator_optimizer.load_state_dict(ckpt['generator_optimizer'])
+        discriminator_feeder.load_state(ckpt['discriminator_feeder'])
+        generator_feeder.load_state(ckpt['generator_feeder'])
     while True:
-        run_discriminator_epoch(model, feeder, criterion, optimizer, 100)
+        run_discriminator_epoch(generator, discriminator, discriminator_feeder, criterion, discriminator_optimizer, steps)
+        run_generator_epoch(generator, discriminator, generator_feeder, criterion, generator_optimizer, steps)
+        utils.mkdir(config.checkpoint_folder)
+        torch.save({
+            'discriminator': discriminator.state_dict(),
+            'generator': generator.state_dict(),
+            'discriminator_optimizer': discriminator_optimizer.state_dict(),
+            'generator_optimizer': generator_optimizer.state_dict(),
+            'discriminator_feeder': discriminator_feeder.state(),
+            'generator_feeder': generator_feeder.state()
+            }, ckpt_path)
+        print('MODEL SAVED.')
 
 
 train(False)

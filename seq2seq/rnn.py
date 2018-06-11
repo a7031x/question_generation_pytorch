@@ -379,7 +379,7 @@ class LSTMAttentionDot(nn.Module):
         steps = range(input.size(0))
         for i in steps:
             hidden = recurrence(input[i], hidden)
-            output.append(isinstance(hidden, tuple) and hidden[0] or hidden)
+            output.append(hidden[0] if isinstance(hidden, tuple) else hidden)
 
         output = torch.cat(output, 0).view(input.size(0), *output[0].size())
 
@@ -869,10 +869,10 @@ class Seq2SeqAttentionSharedEmbedding(nn.Module):
     def __init__(
         self,
         embedding,
-        vocab_size,
         src_hidden_dim,
         trg_hidden_dim,
         ctx_hidden_dim,
+        max_question_len,
         attention_mode,
         batch_size,
         pad_token_src,
@@ -884,8 +884,9 @@ class Seq2SeqAttentionSharedEmbedding(nn.Module):
     ):
         """Initialize model."""
         super(Seq2SeqAttentionSharedEmbedding, self).__init__()
-        self.vocab_size = vocab_size
-        self.emb_dim = embedding.shape[1]
+        self.vocab_size = embedding.weight.shape[0]
+        self.emb_dim = embedding.weight.shape[1]
+        self.max_question_len = max_question_len
         self.src_hidden_dim = src_hidden_dim
         self.trg_hidden_dim = trg_hidden_dim
         self.ctx_hidden_dim = ctx_hidden_dim
@@ -919,9 +920,8 @@ class Seq2SeqAttentionSharedEmbedding(nn.Module):
 
         self.encoder2decoder = nn.Linear(
             self.src_hidden_dim * self.num_directions,
-            trg_hidden_dim
-        )
-        self.decoder2vocab = nn.Linear(trg_hidden_dim, vocab_size)
+            trg_hidden_dim)
+        self.decoder2vocab = nn.Linear(trg_hidden_dim, self.vocab_size)
 
         self.init_weights()
 
@@ -951,10 +951,9 @@ class Seq2SeqAttentionSharedEmbedding(nn.Module):
 
         return h0_encoder.cuda(), c0_encoder.cuda()
 
-    def forward(self, input_src, input_trg, trg_mask=None, ctx_mask=None):
+    def forward(self, input_src, ctx_mask=None):
         """Propogate input through the network."""
         src_emb = self.embedding(input_src)
-        trg_emb = self.embedding(input_trg)
 
         self.h0_encoder, self.c0_encoder = self.get_state(input_src)
 
@@ -972,7 +971,9 @@ class Seq2SeqAttentionSharedEmbedding(nn.Module):
         decoder_init_state = nn.Tanh()(self.encoder2decoder(h_t))
 
         ctx = src_h.transpose(0, 1)
-
+        #trg_emb = self.embedding(input_trg)
+        shape = decoder_init_state.shape
+        trg_emb = decoder_init_state.repeat(1, self.max_question_len).view(shape[0], self.max_question_len, shape[1])
         trg_h, (_, _) = self.decoder(
             trg_emb,
             (decoder_init_state, c_t),
@@ -992,6 +993,7 @@ class Seq2SeqAttentionSharedEmbedding(nn.Module):
             decoder_logit.size()[1]
         )
         return decoder_logit
+
 
     def decode(self, logits):
         """Return probability distribution over words."""

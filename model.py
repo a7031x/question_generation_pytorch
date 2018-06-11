@@ -10,10 +10,11 @@ class Discriminator(nn.Module):
         super(Discriminator, self).__init__()
         self.vocab_size = vocab_size
         self.embedding = nn.Embedding(vocab_size, config.embedding_dim)
-        self.passage_conv0 = self.cnn_layers(config.num_passage_encoder_layers, config.encoder_kernel_size0, config.dense_vector_dim//2)
-        self.passage_conv1 = self.cnn_layers(config.num_passage_encoder_layers, config.encoder_kernel_size1, config.dense_vector_dim//2)
-        self.question_conv0 = self.cnn_layers(config.num_question_encoder_layers, config.encoder_kernel_size0, config.dense_vector_dim//2)
-        self.question_conv1 = self.cnn_layers(config.num_question_encoder_layers, config.encoder_kernel_size1, config.dense_vector_dim//2)
+        self.passage_conv0 = self.cnn_layers(config.num_passage_encoder_layers, config.encoder_kernel_size0, config.conv_vector_dim)
+        self.passage_conv1 = self.cnn_layers(config.num_passage_encoder_layers, config.encoder_kernel_size1, config.conv_vector_dim)
+        self.question_conv0 = self.cnn_layers(config.num_question_encoder_layers, config.encoder_kernel_size0, config.conv_vector_dim)
+        self.question_conv1 = self.cnn_layers(config.num_question_encoder_layers, config.encoder_kernel_size1, config.conv_vector_dim)
+        self.encoder = nn.LSTM(config.conv_vector_dim, config.encoder_hidden_dim, 1, bidirectional=True, batch_first=True)
 
 
     def forward(self, x, y):
@@ -31,8 +32,11 @@ class Discriminator(nn.Module):
         return similarity, torch.sum(mask)
 
 
-    def encode_question_embedding(self, embed):
-        return self.encode_embedding2(self.question_conv0, self.question_conv1, embed)
+    def compute_similarity(self, passage, question_embed):
+        state_x = self.encode_embedding2(self.passage_conv0, self.passage_conv1, self.embedding(passage))
+        state_y = self.encode_embedding2(self.question_conv0, self.question_conv1, question_embed)
+        similarity = torch.sum(state_x * state_y, -1)
+        return similarity
 
 
     def encode_embedding2(self, convs0, convs1, embed):
@@ -46,8 +50,10 @@ class Discriminator(nn.Module):
         x = torch.transpose(embed, 1, 2)
         x = convs(x)
         encoding = torch.transpose(x, 1, 2)
-        output = torch.tanh(torch.sum(encoding, 1))
-        return output
+        encoding = torch.tanh(encoding)
+        _, (state_h, state_c) = self.encoder(encoding)
+        state = torch.cat([state_h.transpose(0, 1), state_c.transpose(0, 1)], -1)
+        return state.view(x.shape[0], -1)
 
 
     def cnn_layers(self, num_layers, kernel_size, out_channels):
@@ -63,10 +69,10 @@ class Generator(rnn.Seq2SeqAttentionSharedEmbedding):
     def __init__(self, embedding):
         super(Generator, self).__init__(
             embedding=embedding,
-            vocab_size=config.char_vocab_file,
             src_hidden_dim=config.encoder_hidden_dim,
             trg_hidden_dim=config.decoder_hidden_dim,
             ctx_hidden_dim=config.dense_vector_dim,
+            max_question_len=config.max_question_len,
             attention_mode='dot',
             batch_size=config.batch_size,
             bidirectional=True,
@@ -79,8 +85,11 @@ class Generator(rnn.Seq2SeqAttentionSharedEmbedding):
 
 
     def forward(self, x):
-        x = [[config.SOS_ID]+s+[config.EOS_ID] for s in x]
-        
+        decoder_logit = super(Generator, self).forward(x)
+        ids = torch.argmax(decoder_logit, -1)
+        decoder_logit[:,:,config.EOS_ID] = 0
+        embed = torch.einsum('bij,jk->bik', (decoder_logit, self.embedding.weight))
+        return embed, ids
 
 
 if __name__ == '__main__':

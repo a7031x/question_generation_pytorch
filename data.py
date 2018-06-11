@@ -64,7 +64,7 @@ class TrainFeeder(Feeder):
         if type == 'train':
             self.prepare_data(self.dataset.train_set)
             self.keep_prob = config.keep_prob
-            random.shuffle(self.data)
+            random.shuffle(self.data_index)
         elif type == 'dev':
             self.prepare_data(self.dataset.dev_set)
             self.keep_prob = 1.0
@@ -75,6 +75,7 @@ class TrainFeeder(Feeder):
 
     def prepare_data(self, dataset):
         self.data = dataset
+        self.data_index = list(range(len(self.data)))
         r = set()
         for _, questions in self.data:
             for question in questions:
@@ -83,11 +84,11 @@ class TrainFeeder(Feeder):
 
 
     def state(self):
-        return self.iteration, self.cursor
+        return self.iteration, self.cursor, self.data_index
 
 
     def load_state(self, state):
-        self.iteration, self.cursor = state
+        self.iteration, self.cursor, self.data_index = state
 
 
     def create_record(self, example):
@@ -167,7 +168,8 @@ class TrainFeeder(Feeder):
             self.iteration += 1
             self.cursor = 0
         size = min(self.size - self.cursor, batch_size)
-        batch = self.data[self.cursor:self.cursor+size]
+        batch = self.data_index[self.cursor:self.cursor+size]
+        batch = [self.data[idx] for idx in batch]
         batch_pid = []
         batch_qid = []
         batch_label = []
