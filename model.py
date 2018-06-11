@@ -70,8 +70,8 @@ class Generator(rnn.Seq2SeqAttentionSharedEmbedding):
             attention_mode='dot',
             batch_size=config.batch_size,
             bidirectional=True,
-            pad_token_src=config.EOS_ID,
-            pad_token_trg=config.EOS_ID,
+            pad_token_src=config.NULL_ID,
+            pad_token_trg=config.NULL_ID,
             nlayers=config.num_passage_encoder_layers,
             nlayers_trg=config.num_decoder_rnn_layers,
             dropout=1-config.keep_prob
@@ -79,6 +79,7 @@ class Generator(rnn.Seq2SeqAttentionSharedEmbedding):
 
 
     def forward(self, x):
+        x = [[config.SOS_ID]+s+[config.EOS_ID] for s in x]
         
 
 
