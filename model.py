@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import numpy as np
 import config
+import seq2seq.rnn as rnn
+
 
 class Discriminator(nn.Module):
     def __init__(self, vocab_size):
@@ -57,14 +59,27 @@ class Discriminator(nn.Module):
         return modules
 
 
-class Generator(nn.Module):
+class Generator(rnn.Seq2SeqAttentionSharedEmbedding):
     def __init__(self, embedding):
-        super(Generator, self).__init__()
-        self.embedding = embedding
+        super(Generator, self).__init__(
+            embedding=embedding,
+            vocab_size=config.char_vocab_file,
+            src_hidden_dim=config.encoder_hidden_dim,
+            trg_hidden_dim=config.decoder_hidden_dim,
+            ctx_hidden_dim=config.dense_vector_dim,
+            attention_mode='dot',
+            batch_size=config.batch_size,
+            bidirectional=True,
+            pad_token_src=config.EOS_ID,
+            pad_token_trg=config.EOS_ID,
+            nlayers=config.num_passage_encoder_layers,
+            nlayers_trg=config.num_decoder_rnn_layers,
+            dropout=1-config.keep_prob
+        )
 
 
     def forward(self, x):
-        embed = self.embedding(x)
+        
 
 
 if __name__ == '__main__':

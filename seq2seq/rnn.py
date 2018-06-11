@@ -868,7 +868,7 @@ class Seq2SeqAttentionSharedEmbedding(nn.Module):
 
     def __init__(
         self,
-        emb_dim,
+        embedding,
         vocab_size,
         src_hidden_dim,
         trg_hidden_dim,
@@ -885,7 +885,7 @@ class Seq2SeqAttentionSharedEmbedding(nn.Module):
         """Initialize model."""
         super(Seq2SeqAttentionSharedEmbedding, self).__init__()
         self.vocab_size = vocab_size
-        self.emb_dim = emb_dim
+        self.emb_dim = embedding.shape[1]
         self.src_hidden_dim = src_hidden_dim
         self.trg_hidden_dim = trg_hidden_dim
         self.ctx_hidden_dim = ctx_hidden_dim
@@ -895,20 +895,15 @@ class Seq2SeqAttentionSharedEmbedding(nn.Module):
         self.nlayers = nlayers
         self.dropout = dropout
         self.num_directions = 2 if bidirectional else 1
-        self.pad_token_src = pad_token_src
-        self.pad_token_trg = pad_token_trg
-
-        self.embedding = nn.Embedding(
-            vocab_size,
-            emb_dim,
-            self.pad_token_src
-        )
+        #self.pad_token_src = pad_token_src
+        #self.pad_token_trg = pad_token_trg
+        self.embedding = embedding
 
         self.src_hidden_dim = src_hidden_dim // 2 \
             if self.bidirectional else src_hidden_dim
 
         self.encoder = nn.LSTM(
-            emb_dim,
+            self.emb_dim,
             self.src_hidden_dim,
             nlayers,
             bidirectional=bidirectional,
@@ -917,7 +912,7 @@ class Seq2SeqAttentionSharedEmbedding(nn.Module):
         )
 
         self.decoder = LSTMAttentionDot(
-            emb_dim,
+            self.emb_dim,
             trg_hidden_dim,
             batch_first=True
         )

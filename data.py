@@ -162,7 +162,7 @@ class TrainFeeder(Feeder):
         return self.cursor == self.size
 
 
-    def next(self, batch_size=config.batch_size):
+    def next(self, batch_size=config.batch_size, align=True):
         if self.eof():
             self.iteration += 1
             self.cursor = 0
@@ -182,7 +182,7 @@ class TrainFeeder(Feeder):
             batch_qid.append(qids)
             batch_label.append(labels)
         self.cursor += size
-        return align2d(batch_pid), align3d(batch_qid), align2d(batch_label), self.keep_prob
+        return align2d(batch_pid) if align else batch_pid, align3d(batch_qid) if align else batch_qid, align2d(batch_label) if align else batch_label, self.keep_prob
 
 
 def load_vocab(filename, count):
