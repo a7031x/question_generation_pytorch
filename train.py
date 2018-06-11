@@ -4,6 +4,7 @@ import numpy as np
 import os
 import config
 import torch
+import utils
 
 ckpt_path = os.path.join(config.checkpoint_folder, 'model.ckpt')
 
@@ -35,6 +36,7 @@ def run_discriminator_epoch(model, feeder, criterion, optimizer, batches):
         print_prediction(feeder, similarity, pids, qids, labels, 1)
         print('------ITERATION {}, {}/{}, loss: {:>.4F}'.format(feeder.iteration, feeder.cursor, feeder.size, loss/count))
         if nbatch % 10 == 0:
+            utils.mkdir(config.checkpoint_folder)
             torch.save({
                 'model': model.state_dict(),
                 'optimizer': optimizer.state_dict(),

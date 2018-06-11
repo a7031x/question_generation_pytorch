@@ -44,7 +44,7 @@ class Discriminator(nn.Module):
         x = torch.transpose(embed, 1, 2)
         x = convs(x)
         encoding = torch.transpose(x, 1, 2)
-        output = torch.sum(encoding, 1)
+        output = torch.tanh(torch.sum(encoding, 1))
         return output
 
 
