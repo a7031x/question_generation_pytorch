@@ -76,7 +76,7 @@ def run_generator_epoch(generator, discriminator, feeder, criterion, optimizer, 
         print('------ITERATION {}, {}/{}, loss: {:>.4F}'.format(feeder.iteration, feeder.cursor, feeder.size, loss))
 
 
-def train(auto_stop, steps=100):
+def train(auto_stop, steps=50):
     dataset = Dataset()
     discriminator_feeder = TrainFeeder(dataset)
     generator_feeder = TrainFeeder(dataset)
