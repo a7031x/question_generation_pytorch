@@ -50,7 +50,7 @@ class Discriminator(nn.Module):
         x = torch.transpose(embed, 1, 2)
         x = convs(x)
         encoding = torch.transpose(x, 1, 2)
-        encoding = torch.tanh(encoding)
+        #encoding = torch.tanh(encoding)
         _, (state_h, state_c) = self.encoder(encoding)
         state = torch.cat([state_h.transpose(0, 1), state_c.transpose(0, 1)], -1)
         return state.view(x.shape[0], -1)

@@ -34,11 +34,14 @@ def run_discriminator_epoch(generator, discriminator, feeder, criterion, optimiz
         x = torch.tensor(pids).cuda()
         y = torch.tensor(qids).cuda()
         similarity, count = discriminator(x, y)
-        question_embedding, _ = generator(x)
-        generated_similarity = discriminator.compute_similarity(x, question_embedding)        
-        generation_label = torch.tensor([0]*batch_size).cuda().float()
+        if generator is not None:
+            question_embedding, _ = generator(x)
+            generated_similarity = discriminator.compute_similarity(x, question_embedding)        
+            generation_label = torch.tensor([0]*batch_size).cuda().float()
+            generator_loss = criterion(generated_similarity, generation_label)/torch.tensor(batch_size).cuda().float()
+        else:
+            generator_loss = 0
         discriminator_loss = criterion(similarity, torch.tensor(labels).cuda().float())/count.float()
-        generator_loss = criterion(generated_similarity, generation_label)/torch.tensor(batch_size).cuda().float()
         loss = discriminator_loss + generator_loss
         optimizer.zero_grad()
         loss.backward()
@@ -47,6 +50,7 @@ def run_discriminator_epoch(generator, discriminator, feeder, criterion, optimiz
         print_prediction(feeder, similarity, pids, qids, labels, 1)
         print('------ITERATION {}, {}/{}, loss: {:>.4F}+{:>.4F}={:>.4F}'.format(
             feeder.iteration, feeder.cursor, feeder.size, discriminator_loss, generator_loss, loss))
+    return loss
 
 
 def run_generator_epoch(generator, discriminator, feeder, criterion, optimizer, batches):
@@ -65,12 +69,8 @@ def run_generator_epoch(generator, discriminator, feeder, criterion, optimizer, 
         optimizer.zero_grad()        
         loss = criterion(similarity, label)
         loss.backward()
-        emb0 = generator.embedding.weight.view(-1).tolist()
         generator.embedding.zero_grad()
         optimizer.step()
-        emb1 = generator.embedding.weight.view(-1).tolist()
-        for s, t in zip(emb0, emb1):
-            assert s == t
         loss, similarity = (loss/batch_size).tolist(), torch.sigmoid(similarity).tolist()
         print_prediction(feeder, similarity, [q[0] for q in qids], gids, label)
         print('------ITERATION {}, {}/{}, loss: {:>.4F}'.format(feeder.iteration, feeder.cursor, feeder.size, loss))
@@ -95,9 +95,11 @@ def train(auto_stop, steps=50):
         generator_optimizer.load_state_dict(ckpt['generator_optimizer'])
         discriminator_feeder.load_state(ckpt['discriminator_feeder'])
         generator_feeder.load_state(ckpt['generator_feeder'])
+    loss = 1
     while True:
-        run_discriminator_epoch(generator, discriminator, discriminator_feeder, criterion, discriminator_optimizer, steps)
-        run_generator_epoch(generator, discriminator, generator_feeder, criterion, generator_optimizer, steps)
+        loss = run_discriminator_epoch(generator if loss < 0.5 else None, discriminator, discriminator_feeder, criterion, discriminator_optimizer, steps)
+        if loss < 0.5:
+            run_generator_epoch(generator, discriminator, generator_feeder, criterion, generator_optimizer, steps)
         utils.mkdir(config.checkpoint_folder)
         torch.save({
             'discriminator': discriminator.state_dict(),
