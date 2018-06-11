@@ -12,20 +12,22 @@ class Discriminator(nn.Module):
         self.embedding = nn.Embedding(vocab_size, config.embedding_dim)
         self.passage_conv0 = self.cnn_layers(config.num_passage_encoder_layers, config.encoder_kernel_size0, config.conv_vector_dim)
         self.passage_conv1 = self.cnn_layers(config.num_passage_encoder_layers, config.encoder_kernel_size1, config.conv_vector_dim)
+        self.passage_gate = self.cnn_layers(config.num_passage_encoder_layers, config.encoder_kernel_size1, config.conv_vector_dim*2)
         self.question_conv0 = self.cnn_layers(config.num_question_encoder_layers, config.encoder_kernel_size0, config.conv_vector_dim)
         self.question_conv1 = self.cnn_layers(config.num_question_encoder_layers, config.encoder_kernel_size1, config.conv_vector_dim)
-        self.encoder = nn.LSTM(config.conv_vector_dim, config.encoder_hidden_dim, 1, bidirectional=True, batch_first=True)
+        self.question_gate = self.cnn_layers(config.num_passage_encoder_layers, config.encoder_kernel_size1, config.conv_vector_dim*2)
+        self.encoder = nn.LSTM(config.conv_vector_dim*2, config.encoder_hidden_dim, 1, bidirectional=True, batch_first=True)
 
 
     def forward(self, x, y):
-        state_x = self.encode_embedding2(self.passage_conv0, self.passage_conv1, self.embedding(x))
+        state_x = self.encode_embedding2(self.passage_conv0, self.passage_conv1, self.passage_gate, self.embedding(x))
         batch_size = y.shape[0]
         num_questions = y.shape[1]
         y = y.view(batch_size*num_questions, -1)
         mask = y != 0
         length = torch.sum(mask, -1)
         mask = length != 0
-        state_y = self.encode_embedding2(self.question_conv0, self.question_conv1, self.embedding(y))
+        state_y = self.encode_embedding2(self.question_conv0, self.question_conv1, self.question_gate, self.embedding(y))
         state_x = state_x.repeat(1, num_questions).view(batch_size*num_questions, -1)
         similarity = torch.sum(state_x * state_y, -1) * mask.float()
         similarity = similarity.view(batch_size, num_questions)
@@ -33,27 +35,28 @@ class Discriminator(nn.Module):
 
 
     def compute_similarity(self, passage, question_embed):
-        state_x = self.encode_embedding2(self.passage_conv0, self.passage_conv1, self.embedding(passage))
-        state_y = self.encode_embedding2(self.question_conv0, self.question_conv1, question_embed)
+        state_x = self.encode_embedding2(self.passage_conv0, self.passage_conv1, self.passage_gate, self.embedding(passage))
+        state_y = self.encode_embedding2(self.question_conv0, self.question_conv1, self.question_gate, question_embed)
         similarity = torch.sum(state_x * state_y, -1)
         return similarity
 
 
-    def encode_embedding2(self, convs0, convs1, embed):
-        state0 = self.encode_embedding(convs0, embed)
-        state1 = self.encode_embedding(convs1, embed)
-        state = torch.cat([state0, state1], -1)
-        return state
-
+    def encode_embedding2(self, convs0, convs1, convsg, embed):
+        encoding0 = self.encode_embedding(convs0, embed)
+        encoding1 = self.encode_embedding(convs1, embed)
+        gate = torch.sigmoid(self.encode_embedding(convsg, embed))
+        encoding = torch.cat([encoding0, encoding1], -1) * gate
+    #    _, (state_h, state_c) = self.encoder(encoding)
+    #    state = torch.cat([state_h.transpose(0, 1), state_c.transpose(0, 1)], -1).view(embed.shape[0], -1)
+    #    return state
+        return torch.sum(encoding, 1)
+        
 
     def encode_embedding(self, convs, embed):
         x = torch.transpose(embed, 1, 2)
         x = convs(x)
         encoding = torch.transpose(x, 1, 2)
-        #encoding = torch.tanh(encoding)
-        _, (state_h, state_c) = self.encoder(encoding)
-        state = torch.cat([state_h.transpose(0, 1), state_c.transpose(0, 1)], -1)
-        return state.view(x.shape[0], -1)
+        return encoding
 
 
     def cnn_layers(self, num_layers, kernel_size, out_channels):
