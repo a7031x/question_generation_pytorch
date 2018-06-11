@@ -46,10 +46,10 @@ class Discriminator(nn.Module):
         encoding1 = self.encode_embedding(convs1, embed)
         gate = torch.sigmoid(self.encode_embedding(convsg, embed))
         encoding = torch.cat([encoding0, encoding1], -1) * gate
-    #    _, (state_h, state_c) = self.encoder(encoding)
-    #    state = torch.cat([state_h.transpose(0, 1), state_c.transpose(0, 1)], -1).view(embed.shape[0], -1)
-    #    return state
-        return torch.sum(encoding, 1)
+        _, (state_h, state_c) = self.encoder(encoding)
+        state = torch.cat([state_h.transpose(0, 1), state_c.transpose(0, 1)], -1).view(embed.shape[0], -1)
+        return state
+    #    return torch.sum(encoding, 1)
         
 
     def encode_embedding(self, convs, embed):
