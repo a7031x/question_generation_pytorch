@@ -86,11 +86,13 @@ class Generator(rnn.Seq2SeqAttentionSharedEmbedding):
             nlayers_trg=config.num_decoder_rnn_layers,
             dropout=1-config.keep_prob
         )
+        self.softmax = nn.Softmax(dim=-1)
 
 
     def forward(self, x):
-        decoder_logit = super(Generator, self).forward(x).sigmoid()
-        decoder_logit[:,:,config.EOS_ID] = 0.0
+        decoder_logit = super(Generator, self).forward(x)
+        decoder_logit = 1 / (1+torch.exp(-decoder_logit))
+        decoder_logit[:,:,config.EOS_ID] = 0
         return decoder_logit
 
 
