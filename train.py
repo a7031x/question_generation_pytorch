@@ -34,14 +34,16 @@ def run_discriminator_epoch(generator, discriminator, feeder, criterion, optimiz
         x = torch.tensor(pids).cuda()
         y = torch.tensor(qids).cuda()
         similarity, count = discriminator(x, y)
+        discriminator_loss = criterion(similarity, torch.tensor(labels).cuda().float())/count.float()
         if generator is not None:
             question_embedding, _ = generator(x)
             generated_similarity = discriminator.compute_similarity(x, question_embedding)        
             generation_label = torch.tensor([0]*batch_size).cuda().float()
             generator_loss = criterion(generated_similarity, generation_label)/torch.tensor(batch_size).cuda().float()
+            factor = min(((discriminator_loss / generator_loss) * 0.1).tolist(), 1)
+            generator_loss *= factor
         else:
             generator_loss = 0
-        discriminator_loss = criterion(similarity, torch.tensor(labels).cuda().float())/count.float()
         loss = discriminator_loss + generator_loss
         optimizer.zero_grad()
         loss.backward()
@@ -76,7 +78,7 @@ def run_generator_epoch(generator, discriminator, feeder, criterion, optimizer, 
         print('------ITERATION {}, {}/{}, loss: {:>.4F}'.format(feeder.iteration, feeder.cursor, feeder.size, loss))
 
 
-def train(auto_stop, steps=50):
+def train(auto_stop, steps=50, threshold=0.5):
     dataset = Dataset()
     discriminator_feeder = TrainFeeder(dataset)
     generator_feeder = TrainFeeder(dataset)
@@ -97,8 +99,8 @@ def train(auto_stop, steps=50):
         generator_feeder.load_state(ckpt['generator_feeder'])
     loss = 1
     while True:
-        loss = run_discriminator_epoch(generator if loss < 0.5 else None, discriminator, discriminator_feeder, criterion, discriminator_optimizer, steps)
-        if loss < 0.5:
+        loss = run_discriminator_epoch(generator if loss < threshold else None, discriminator, discriminator_feeder, criterion, discriminator_optimizer, steps)
+        if loss < threshold:
             run_generator_epoch(generator, discriminator, generator_feeder, criterion, generator_optimizer, steps)
         utils.mkdir(config.checkpoint_folder)
         torch.save({
