@@ -17,17 +17,19 @@ class Discriminator(nn.Module):
         self.question_conv1 = self.cnn_layers(config.num_question_encoder_layers, config.encoder_kernel_size1, config.conv_vector_dim)
         self.question_gate = self.cnn_layers(config.num_passage_encoder_layers, config.encoder_kernel_size1, config.conv_vector_dim*2)
         self.encoder = nn.LSTM(config.conv_vector_dim*2, config.encoder_hidden_dim, 1, bidirectional=True, batch_first=True)
+        self.passage_attention0, self.passage_attention1 = self.attention_layer()
+        self.question_attention0, self.question_attention1 = self.attention_layer()
 
 
     def forward(self, x, y):
-        state_x = self.encode_embedding2(self.passage_conv0, self.passage_conv1, self.passage_gate, self.embedding(x))
+        state_x = self.encode_embedding2(self.passage_conv0, self.passage_conv1, self.passage_gate, self.embedding(x), self.passage_attention0, self.passage_attention1)
         batch_size = y.shape[0]
         num_questions = y.shape[1]
         y = y.view(batch_size*num_questions, -1)
         mask = y != 0
         length = torch.sum(mask, -1)
         mask = length != 0
-        state_y = self.encode_embedding2(self.question_conv0, self.question_conv1, self.question_gate, self.embedding(y))
+        state_y = self.encode_embedding2(self.question_conv0, self.question_conv1, self.question_gate, self.embedding(y), self.question_attention0, self.question_attention1)
         state_x = state_x.repeat(1, num_questions).view(batch_size*num_questions, -1)
         similarity = torch.sum(state_x * state_y, -1) * mask.float()
         similarity = similarity.view(batch_size, num_questions)
@@ -41,16 +43,25 @@ class Discriminator(nn.Module):
         return similarity
 
 
-    def encode_embedding2(self, convs0, convs1, convsg, embed):
+    def encode_embedding2(self, convs0, convs1, convsg, embed, attention0, attention1):
         encoding0 = self.encode_embedding(convs0, embed)
         encoding1 = self.encode_embedding(convs1, embed)
+        encoding = torch.cat([encoding0, encoding1], -1)
+        encoding = self.selfmatch(encoding, attention0, attention1)
         gate = torch.sigmoid(self.encode_embedding(convsg, embed))
-        encoding = torch.cat([encoding0, encoding1], -1) * gate
+        encoding = encoding * gate
         _, (state_h, state_c) = self.encoder(encoding)
         state = torch.cat([state_h.transpose(0, 1), state_c.transpose(0, 1)], -1).view(embed.shape[0], -1)
         return state
-    #    return torch.sum(encoding, 1)
         
+
+    def selfmatch(self, x, dense0, dense1, mask=None):
+        coref = torch.bmm(dense0(x), dense1(x).transpose(1, 2))
+        if mask is not None:
+            coref = coref - (1-mask)*10000
+        alpha = torch.sigmoid(coref)
+        return torch.bmm(alpha, x)
+
 
     def encode_embedding(self, convs, embed):
         x = torch.transpose(embed, 1, 2)
@@ -66,6 +77,12 @@ class Discriminator(nn.Module):
             modules.add_module('conv_{}'.format(i), conv)
             modules.add_module('tanh_{}'.format(i), nn.Tanh())
         return modules
+
+
+    def attention_layer(self):
+        dense0 = nn.Linear(config.encoder_hidden_dim*2, config.attention_weight_dim, False)
+        dense1 = nn.Linear(config.encoder_hidden_dim*2, config.attention_weight_dim, False)
+        return dense0, dense1
 
 
 class Generator(rnn.Seq2SeqAttentionSharedEmbedding):
