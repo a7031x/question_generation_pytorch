@@ -46,9 +46,6 @@ class Discriminator(nn.Module):
         encoding1 = self.encode_embedding(convs1, embed)
         gate = torch.sigmoid(self.encode_embedding(convsg, embed))
         encoding = torch.cat([encoding0, encoding1], -1) * gate
-    #    _, (state_h, state_c) = self.encoder(encoding)
-    #    state = torch.cat([state_h.transpose(0, 1), state_c.transpose(0, 1)], -1).view(embed.shape[0], -1)
-    #    return state
         return torch.sum(encoding, 1)
         
 
@@ -63,8 +60,9 @@ class Discriminator(nn.Module):
         modules = nn.Sequential()
         for i in range(num_layers):
             conv = nn.Conv1d(config.embedding_dim if i == 0 else out_channels, out_channels, kernel_size, padding=kernel_size//2)
+            maxpool = nn.MaxPool1d(2)
             modules.add_module('conv_{}'.format(i), conv)
-            modules.add_module('tanh_{}'.format(i), nn.Tanh())
+            modules.add_module('maxpool_{}'.format(i), maxpool)
         return modules
 
 
