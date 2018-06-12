@@ -34,7 +34,8 @@ class Discriminator(nn.Module):
         return similarity, torch.sum(mask)
 
 
-    def compute_similarity(self, passage, question_embed):
+    def compute_similarity(self, passage, logit):
+        question_embed = torch.einsum('bij,jk->bik', (logit, self.embedding.weight))
         state_x = self.encode_embedding2(self.passage_conv0, self.passage_conv1, self.passage_gate, self.embedding(passage))
         state_y = self.encode_embedding2(self.question_conv0, self.question_conv1, self.question_gate, question_embed)
         similarity = torch.sum(state_x * state_y, -1)
@@ -69,9 +70,9 @@ class Discriminator(nn.Module):
 
 
 class Generator(rnn.Seq2SeqAttentionSharedEmbedding):
-    def __init__(self, embedding):
+    def __init__(self, vocab_size):
         super(Generator, self).__init__(
-            embedding=embedding,
+            embedding=nn.Embedding(vocab_size, config.embedding_dim),
             src_hidden_dim=config.encoder_hidden_dim,
             trg_hidden_dim=config.decoder_hidden_dim,
             ctx_hidden_dim=config.dense_vector_dim,
@@ -91,8 +92,7 @@ class Generator(rnn.Seq2SeqAttentionSharedEmbedding):
         decoder_logit = super(Generator, self).forward(x)
         ids = torch.argmax(decoder_logit, -1)
         decoder_logit[:,:,config.EOS_ID] = 0
-        embed = torch.einsum('bij,jk->bik', (decoder_logit, self.embedding.weight))
-        return embed, ids
+        return decoder_logit
 
 
 if __name__ == '__main__':
