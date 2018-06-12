@@ -36,8 +36,8 @@ def run_discriminator_epoch(generator, discriminator, feeder, criterion, optimiz
         similarity, count = discriminator(x, y)
         discriminator_loss = criterion(similarity, torch.tensor(labels).cuda().float())/count.float()
         if generator is not None:
-            question_embedding, _ = generator(x)
-            generated_similarity = discriminator.compute_similarity(x, question_embedding)        
+            question_logit = generator(x)
+            generated_similarity = discriminator.compute_similarity(x, question_logit)        
             generation_label = torch.tensor([0]*batch_size).cuda().float()
             generator_loss = criterion(generated_similarity, generation_label)/torch.tensor(batch_size).cuda().float()
             factor = min(((discriminator_loss / generator_loss) * 0.1).tolist(), 1)
