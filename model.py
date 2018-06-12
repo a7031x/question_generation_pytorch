@@ -89,8 +89,7 @@ class Generator(rnn.Seq2SeqAttentionSharedEmbedding):
 
 
     def forward(self, x):
-        decoder_logit = super(Generator, self).forward(x)
-        decoder_logit = 1 / (1+torch.exp(-decoder_logit))
+        decoder_logit = super(Generator, self).forward(x).sigmoid().clone()
         decoder_logit[:,:,config.EOS_ID] = 0
         return decoder_logit
 
