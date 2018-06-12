@@ -81,7 +81,7 @@ def train(auto_stop, steps=50, threshold=0.5):
     discriminator_feeder = TrainFeeder(dataset)
     generator_feeder = TrainFeeder(dataset)
     discriminator = Discriminator(len(dataset.ci2n)).cuda()
-    generator = Generator(len(dataset.ci2n).cuda()
+    generator = Generator(len(dataset.ci2n)).cuda()
     criterion = torch.nn.BCEWithLogitsLoss(size_average=False)
     discriminator_optimizer = torch.optim.Adam(discriminator.parameters(), lr=1e-4)
     generator_optimizer = torch.optim.Adam(generator.parameters(), lr=1e-4)
