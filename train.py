@@ -63,9 +63,9 @@ def run_generator_epoch(generator, discriminator, feeder, criterion, optimizer, 
         x = [[config.SOS_ID]+s+[config.EOS_ID] for s in pids]
         x = align2d(x)
         x = torch.tensor(x).cuda()
-        question_embedding, gids = generator(x)
-        gids = gids.tolist()
-        similarity = discriminator.compute_similarity(x, question_embedding)
+        question_logit = generator(x)
+        gids = question_logit.argmax(-1).tolist()
+        similarity = discriminator.compute_similarity(x, question_logit)
         label = torch.tensor([1]*batch_size).cuda().float()
         optimizer.zero_grad()        
         loss = criterion(similarity, label)
