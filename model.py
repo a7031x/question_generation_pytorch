@@ -60,9 +60,9 @@ class Discriminator(nn.Module):
         modules = nn.Sequential()
         for i in range(num_layers):
             conv = nn.Conv1d(config.embedding_dim if i == 0 else out_channels, out_channels, kernel_size, padding=kernel_size//2)
-            maxpool = nn.MaxPool1d(2)
+            pool = nn.ReLU() if i != num_layers - 1 else nn.Tanh()
             modules.add_module('conv_{}'.format(i), conv)
-            modules.add_module('maxpool_{}'.format(i), maxpool)
+            modules.add_module('pool_{}'.format(i), pool)
         return modules
 
 
