@@ -56,6 +56,7 @@ def run_discriminator_epoch(generator, discriminator, feeder, criterion, optimiz
 
 
 def run_generator_epoch(generator, discriminator, feeder, criterion, optimizer, threshold):
+    loss = 100
     while loss >= threshold:
         pids, qids, _, _ = feeder.next(align=False)
         batch_size = len(pids)
