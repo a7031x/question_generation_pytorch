@@ -10,12 +10,12 @@ class Discriminator(nn.Module):
         super(Discriminator, self).__init__()
         self.vocab_size = vocab_size
         self.embedding = nn.Embedding(vocab_size, config.embedding_dim)
-        self.passage_conv0 = self.cnn_layers(config.num_passage_encoder_layers, config.encoder_kernel_size0, config.conv_vector_dim)
-        self.passage_conv1 = self.cnn_layers(config.num_passage_encoder_layers, config.encoder_kernel_size1, config.conv_vector_dim)
-        self.passage_gate = self.cnn_layers(config.num_passage_encoder_layers, config.encoder_kernel_size1, config.conv_vector_dim*2)
-        self.question_conv0 = self.cnn_layers(config.num_question_encoder_layers, config.encoder_kernel_size0, config.conv_vector_dim)
-        self.question_conv1 = self.cnn_layers(config.num_question_encoder_layers, config.encoder_kernel_size1, config.conv_vector_dim)
-        self.question_gate = self.cnn_layers(config.num_passage_encoder_layers, config.encoder_kernel_size1, config.conv_vector_dim*2)
+        self.passage_conv0 = self.rnn_layers(config.num_passage_encoder_layers, config.conv_vector_dim)
+        self.passage_conv1 = self.rnn_layers(config.num_passage_encoder_layers, config.conv_vector_dim)
+        self.passage_gate = self.rnn_layers(config.num_passage_encoder_layers, config.conv_vector_dim*2)
+        self.question_conv0 = self.rnn_layers(config.num_question_encoder_layers, config.conv_vector_dim)
+        self.question_conv1 = self.rnn_layers(config.num_question_encoder_layers, config.conv_vector_dim)
+        self.question_gate = self.rnn_layers(config.num_passage_encoder_layers, config.conv_vector_dim*2)
         self.encoder = nn.LSTM(config.conv_vector_dim*2, config.encoder_hidden_dim, 1, bidirectional=True, batch_first=True)
 
 
@@ -46,16 +46,14 @@ class Discriminator(nn.Module):
         encoding1 = self.encode_embedding(convs1, embed)
         gate = torch.sigmoid(self.encode_embedding(convsg, embed))
         encoding = torch.cat([encoding0, encoding1], -1) * gate
-        _, (state_h, state_c) = self.encoder(encoding)
-        state = torch.cat([state_h.transpose(0, 1), state_c.transpose(0, 1)], -1).view(embed.shape[0], -1)
-        return state
-    #    return torch.sum(encoding, 1)
+     #   _, (state_h, state_c) = self.encoder(encoding)
+     #   state = torch.cat([state_h.transpose(0, 1), state_c.transpose(0, 1)], -1).view(embed.shape[0], -1)
+     #   return state
+        return torch.sum(encoding, 1)
         
 
     def encode_embedding(self, convs, embed):
-        x = torch.transpose(embed, 1, 2)
-        x = convs(x)
-        encoding = torch.transpose(x, 1, 2)
+        encoding, _ = convs(embed)
         return encoding
 
 
@@ -66,6 +64,16 @@ class Discriminator(nn.Module):
             modules.add_module('conv_{}'.format(i), conv)
             modules.add_module('tanh_{}'.format(i), nn.Tanh())
         return modules
+
+
+    def rnn_layers(self, num_layers, hidden_dim):
+        module = rnn.DeepBidirectionalLSTM(
+            input_size=config.embedding_dim,
+            hidden_size=hidden_dim,
+            num_layers=num_layers,
+            dropout=0,
+            batch_first=True)
+        return module
 
 
 class Generator(rnn.Seq2SeqAttentionSharedEmbedding):
