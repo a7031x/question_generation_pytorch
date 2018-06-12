@@ -100,7 +100,7 @@ def train(auto_stop, steps=50, threshold=0.5):
     while True:
         loss = run_discriminator_epoch(generator if loss < threshold else None, discriminator, discriminator_feeder, criterion, discriminator_optimizer, steps)
         if loss < threshold:
-            run_generator_epoch(generator, discriminator, generator_feeder, criterion, generator_optimizer, 3)
+            run_generator_epoch(generator, discriminator, generator_feeder, criterion, generator_optimizer, 1)
         utils.mkdir(config.checkpoint_folder)
         torch.save({
             'discriminator': discriminator.state_dict(),
