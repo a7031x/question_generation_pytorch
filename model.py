@@ -90,7 +90,7 @@ class Generator(rnn.Seq2SeqAttentionSharedEmbedding):
 
     def forward(self, x):
         decoder_logit = super(Generator, self).forward(x).sigmoid()
-        decoder_logit[:,:,config.EOS_ID] = 0
+        decoder_logit[:,:,config.EOS_ID] = 0.0
         return decoder_logit
 
 
