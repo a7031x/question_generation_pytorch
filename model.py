@@ -12,22 +12,25 @@ class Discriminator(nn.Module):
         self.embedding = nn.Embedding(vocab_size, config.embedding_dim)
         self.passage_conv0 = self.cnn_layers(config.num_passage_encoder_layers, config.encoder_kernel_size0, config.conv_vector_dim)
         self.passage_conv1 = self.cnn_layers(config.num_passage_encoder_layers, config.encoder_kernel_size1, config.conv_vector_dim)
-        self.passage_gate = self.cnn_layers(config.num_passage_encoder_layers, config.encoder_kernel_size1, config.conv_vector_dim*2)
+        #self.passage_gate = self.cnn_layers(config.num_passage_encoder_layers, config.encoder_kernel_size1, config.conv_vector_dim*2)
         self.question_conv0 = self.cnn_layers(config.num_question_encoder_layers, config.encoder_kernel_size0, config.conv_vector_dim)
         self.question_conv1 = self.cnn_layers(config.num_question_encoder_layers, config.encoder_kernel_size1, config.conv_vector_dim)
         self.question_gate = self.cnn_layers(config.num_passage_encoder_layers, config.encoder_kernel_size1, config.conv_vector_dim*2)
-        self.encoder = nn.LSTM(config.conv_vector_dim*2, config.encoder_hidden_dim, 1, bidirectional=True, batch_first=True)
+        self.question_encoder = nn.LSTM(config.conv_vector_dim*2, config.encoder_hidden_dim, 2, bidirectional=True, batch_first=True)
+        self.encoder_dim = config.encoder_hidden_dim * 2
+        self.passage_dense = nn.Linear(self.encoder_dim, config.dense_match_dim)
+        self.passage_encoder = nn.LSTM(config.conv_vector_dim*2, config.encoder_hidden_dim, 2, bidirectional=True, batch_first=True)
 
 
     def forward(self, x, y):
-        state_x = self.encode_embedding2(self.passage_conv0, self.passage_conv1, self.passage_gate, self.embedding(x))
+        state_x = self.encode_passage(x)
         batch_size = y.shape[0]
         num_questions = y.shape[1]
         y = y.view(batch_size*num_questions, -1)
         mask = y != 0
         length = torch.sum(mask, -1)
         mask = length != 0
-        state_y = self.encode_embedding2(self.question_conv0, self.question_conv1, self.question_gate, self.embedding(y))
+        state_y = self.encode_question(y)
         state_x = state_x.repeat(1, num_questions).view(batch_size*num_questions, -1)
         similarity = torch.sum(state_x * state_y, -1) * mask.float()
         similarity = similarity.view(batch_size, num_questions)
@@ -36,21 +39,41 @@ class Discriminator(nn.Module):
 
     def compute_similarity(self, passage, logit):
         question_embed = torch.einsum('bij,jk->bik', (logit, self.embedding.weight))
-        state_x = self.encode_embedding2(self.passage_conv0, self.passage_conv1, self.passage_gate, self.embedding(passage))
-        state_y = self.encode_embedding2(self.question_conv0, self.question_conv1, self.question_gate, question_embed)
+        state_x = self.encode_passage(passage)
+        state_y = self.encode_question_embedding(question_embed)
         similarity = torch.sum(state_x * state_y, -1)
         return similarity
 
 
-    def encode_embedding2(self, convs0, convs1, convsg, embed):
-        encoding0 = self.encode_embedding(convs0, embed)
-        encoding1 = self.encode_embedding(convs1, embed)
-        gate = torch.sigmoid(self.encode_embedding(convsg, embed))
-        encoding = torch.cat([encoding0, encoding1], -1) * gate
-        _, (state_h, state_c) = self.encoder(encoding)
+    def encode_question(self, input):
+        return self.encode_question_embedding(self.embedding(input))
+
+
+    def encode_passage(self, input):
+        embed = self.embedding(input)
+        encoding0 = self.encode_embedding(self.passage_conv0, embed)
+        encoding1 = self.encode_embedding(self.passage_conv1, embed)
+        encoding = torch.cat([encoding0, encoding1], -1)
+        dense = self.passage_dense(encoding)
+        weight_dim = dense.shape[-1]
+        coref = torch.bmm(dense, dense.transpose(1, 2)) / (weight_dim**0.5)
+        mask = (input != 0).unsqueeze(1).float()
+        coref -= (1-mask) * 10000
+        alpha = nn.functional.softmax(coref, -1)
+        context = torch.bmm(alpha, encoding)
+        _, (state_h, state_c) = self.passage_encoder(context)
         state = torch.cat([state_h.transpose(0, 1), state_c.transpose(0, 1)], -1).view(embed.shape[0], -1)
         return state
-    #    return torch.sum(encoding, 1)
+
+
+    def encode_question_embedding(self, embed):
+        encoding0 = self.encode_embedding(self.question_conv0, embed)
+        encoding1 = self.encode_embedding(self.question_conv1, embed)
+        gate = torch.sigmoid(self.encode_embedding(self.question_gate, embed))
+        encoding = torch.cat([encoding0, encoding1], -1) * gate
+        _, (state_h, state_c) = self.question_encoder(encoding)
+        state = torch.cat([state_h.transpose(0, 1), state_c.transpose(0, 1)], -1).view(embed.shape[0], -1)
+        return state
         
 
     def encode_embedding(self, convs, embed):
