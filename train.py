@@ -33,10 +33,10 @@ def run_discriminator_epoch(generator, discriminator, feeder, criterion, optimiz
         nbatch += 1
         x = torch.tensor(pids).cuda()
         y = torch.tensor(qids).cuda()
-        similarity, count = discriminator(x, y)
+        similarity, count, ctx, state = discriminator(x, y)
         discriminator_loss = criterion(similarity, torch.tensor(labels).cuda().float())/count.float()
         if generator is not None:
-            question_logit = generator(x)
+            question_logit = generator(ctx, state)
             generated_similarity = discriminator.compute_similarity(x, question_logit)        
             generation_label = torch.tensor([0]*batch_size).cuda().float()
             generator_loss = criterion(generated_similarity, generation_label)/torch.tensor(batch_size).cuda().float()
@@ -60,12 +60,11 @@ def run_generator_epoch(generator, discriminator, feeder, criterion, optimizer, 
     ibatch = 0
     while loss >= threshold and ibatch <= batches:
         ibatch += 1
-        pids, qids, _, _ = feeder.next(align=False)
+        pids, qids, _, _ = feeder.next(align=True)
         batch_size = len(pids)
-        x = [[config.SOS_ID]+s+[config.EOS_ID] for s in pids]
-        x = align2d(x)
-        x = torch.tensor(x).cuda()
-        question_logit = generator(x)
+        x = torch.tensor(pids).cuda()
+        ctx, state = discriminator.encode_passage(x)
+        question_logit = generator(ctx, state)
         gids = question_logit.argmax(-1).tolist()
         similarity = discriminator.compute_similarity(x, question_logit)
         label = torch.tensor([1]*batch_size).cuda().float()

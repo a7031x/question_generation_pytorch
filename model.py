@@ -2,8 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import config
-import seq2seq.rnn as rnn
-
+import decoder
 
 class Discriminator(nn.Module):
     def __init__(self, vocab_size):
@@ -23,7 +22,7 @@ class Discriminator(nn.Module):
 
 
     def forward(self, x, y):
-        state_x = self.encode_passage(x)
+        ctx, state_x = self.encode_passage(x)
         batch_size = y.shape[0]
         num_questions = y.shape[1]
         y = y.view(batch_size*num_questions, -1)
@@ -34,12 +33,12 @@ class Discriminator(nn.Module):
         state_x = state_x.repeat(1, num_questions).view(batch_size*num_questions, -1)
         similarity = torch.sum(state_x * state_y, -1) * mask.float()
         similarity = similarity.view(batch_size, num_questions)
-        return similarity, torch.sum(mask)
+        return similarity, torch.sum(mask), ctx, state_x
 
 
     def compute_similarity(self, passage, logit):
         question_embed = torch.einsum('bij,jk->bik', (logit, self.embedding.weight))
-        state_x = self.encode_passage(passage)
+        _, state_x = self.encode_passage(passage)
         state_y = self.encode_question_embedding(question_embed)
         similarity = torch.sum(state_x * state_y, -1)
         return similarity
@@ -61,9 +60,9 @@ class Discriminator(nn.Module):
         coref -= (1-mask) * 10000
         alpha = nn.functional.softmax(coref, -1)
         context = torch.bmm(alpha, encoding)
-        _, (state_h, state_c) = self.passage_encoder(context)
+        ctx, (state_h, state_c) = self.passage_encoder(context)
         state = torch.cat([state_h.transpose(0, 1), state_c.transpose(0, 1)], -1).view(embed.shape[0], -1)
-        return state
+        return ctx, state
 
 
     def encode_question_embedding(self, embed):
@@ -106,14 +105,14 @@ class Discriminator(nn.Module):
         return dense0, dense1
 
 
-class Generator(rnn.Seq2SeqAttentionSharedEmbedding):
+class Generator(decoder.Ctx2SeqAttention):
     def __init__(self, vocab_size):
         super(Generator, self).__init__(
-            embedding=nn.Embedding(vocab_size, config.embedding_dim),
+            ctx_dim=config.encoder_hidden_dim,
+            num_steps=config.max_question_len,
+            vocab_size=config.char_vocab_size,
             src_hidden_dim=config.encoder_hidden_dim,
             trg_hidden_dim=config.decoder_hidden_dim,
-            ctx_hidden_dim=config.dense_vector_dim,
-            max_question_len=config.max_question_len,
             attention_mode='dot',
             batch_size=config.batch_size,
             bidirectional=True,
@@ -123,12 +122,11 @@ class Generator(rnn.Seq2SeqAttentionSharedEmbedding):
             nlayers_trg=config.num_decoder_rnn_layers,
             dropout=1-config.keep_prob
         )
-        self.softmax = nn.Softmax(dim=-1)
 
 
-    def forward(self, x):
-        decoder_logit = nn.functional.softmax(super(Generator, self).forward(x), -1).clone()
-        decoder_logit[:,:,config.EOS_ID] = 0
+    def forward(self, ctx, state):
+        decoder_logit = nn.functional.softmax(super(Generator, self).forward(ctx, state), -1).clone()
+        #decoder_logit[:,:,config.EOS_ID] = 0
         return decoder_logit
 
 
