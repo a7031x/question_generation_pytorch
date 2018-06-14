@@ -100,7 +100,7 @@ class TrainFeeder(Feeder):
 
 
     def create_false_questions(self, questions, multipler=1):
-        weight = [1, 0, 1, 4]
+        weight = [0, 0, 0, 4]
         r = []
         for _ in range(len(questions)*multipler):
             id = np.random.choice(len(weight), None, p=weight/np.sum(weight))
