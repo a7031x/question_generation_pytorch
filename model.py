@@ -30,8 +30,8 @@ class Discriminator(nn.Module):
         length = torch.sum(mask, -1)
         mask = length != 0
         state_y = self.encode_question(y)
-        state_x = state_x.repeat(1, num_questions).view(batch_size*num_questions, -1)
-        similarity = torch.sum(state_x * state_y, -1) * mask.float()
+        tiled_state_x = state_x.repeat(1, num_questions).view(batch_size*num_questions, -1)
+        similarity = torch.sum(tiled_state_x * state_y, -1) * mask.float()
         similarity = similarity.view(batch_size, num_questions)
         return similarity, torch.sum(mask), ctx, state_x, ctx_mask
 
