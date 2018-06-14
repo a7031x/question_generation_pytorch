@@ -2,6 +2,7 @@ checkpoint_folder = './checkpoint'
 log_folder = './log'
 embedding_dim = 128
 encoder_hidden_dim = 128
+attention_weight_dim = 80
 num_passage_encoder_layers = 4
 num_passage_residual_layers = 2
 num_question_encoder_layers = 2
