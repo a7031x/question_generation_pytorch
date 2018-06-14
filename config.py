@@ -12,6 +12,7 @@ num_decoder_residual_layers = 1
 decoder_hidden_dim = 128
 dense_vector_dim = 512
 conv_vector_dim = 128
+dense_match_dim = 80
 max_passage_len = 400
 max_question_len = 20
 using_cnn = True

@@ -37,7 +37,7 @@ def run_discriminator_epoch(generator, discriminator, feeder, criterion, optimiz
         discriminator_loss = criterion(similarity, torch.tensor(labels).cuda().float())/count.float()
         if generator is not None:
             question_logit = generator(x)
-            generated_similarity = discriminator.compute_similarity(x, question_embedding)        
+            generated_similarity = discriminator.compute_similarity(x, question_logit)        
             generation_label = torch.tensor([0]*batch_size).cuda().float()
             generator_loss = criterion(generated_similarity, generation_label)/torch.tensor(batch_size).cuda().float()
             factor = min(((discriminator_loss / generator_loss) * 0.1).tolist(), 1)
@@ -55,19 +55,21 @@ def run_discriminator_epoch(generator, discriminator, feeder, criterion, optimiz
     return loss
 
 
-def run_generator_epoch(generator, discriminator, feeder, criterion, optimizer, threshold):
+def run_generator_epoch(generator, discriminator, feeder, criterion, optimizer, threshold, batches):
     loss = 100
-    while loss >= threshold:
+    ibatch = 0
+    while loss >= threshold and ibatch <= batches:
+        ibatch += 1
         pids, qids, _, _ = feeder.next(align=False)
         batch_size = len(pids)
         x = [[config.SOS_ID]+s+[config.EOS_ID] for s in pids]
         x = align2d(x)
         x = torch.tensor(x).cuda()
-        question_embedding, gids = generator(x)
-        gids = gids.tolist()
-        similarity = discriminator.compute_similarity(x, question_embedding)
+        question_logit = generator(x)
+        gids = question_logit.argmax(-1).tolist()
+        similarity = discriminator.compute_similarity(x, question_logit)
         label = torch.tensor([1]*batch_size).cuda().float()
-        optimizer.zero_grad()        
+        optimizer.zero_grad()
         loss = criterion(similarity, label)
         loss.backward()
         optimizer.step()
@@ -99,7 +101,7 @@ def train(auto_stop, steps=50, threshold=0.5):
     while True:
         loss = run_discriminator_epoch(generator if loss < threshold else None, discriminator, discriminator_feeder, criterion, discriminator_optimizer, steps)
         if loss < threshold:
-            run_generator_epoch(generator, discriminator, generator_feeder, criterion, generator_optimizer, 0.1)
+            run_generator_epoch(generator, discriminator, generator_feeder, criterion, generator_optimizer, 0.2, 100)
         utils.mkdir(config.checkpoint_folder)
         torch.save({
             'discriminator': discriminator.state_dict(),
