@@ -98,6 +98,7 @@ def train(auto_stop, steps=50, threshold=0.5):
         generator_feeder.load_state(ckpt['generator_feeder'])
     loss = 1
     while True:
+        #run_generator_epoch(generator, discriminator, generator_feeder, criterion, generator_optimizer, 0.2, 100)
         loss = run_discriminator_epoch(generator if loss < threshold else None, discriminator, discriminator_feeder, criterion, discriminator_optimizer, steps)
         if loss < threshold:
             run_generator_epoch(generator, discriminator, generator_feeder, criterion, generator_optimizer, 0.2, 100)

@@ -126,7 +126,6 @@ class Generator(decoder.Ctx2SeqAttention):
 
     def forward(self, ctx, state, ctx_mask):
         decoder_logit = nn.functional.softmax(super(Generator, self).forward(ctx, state, ctx_mask), -1).clone()
-        #decoder_logit[:,:,config.EOS_ID] = 0
         return decoder_logit
 
 
