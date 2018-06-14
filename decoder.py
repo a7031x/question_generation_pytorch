@@ -1,4 +1,6 @@
+import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 class SoftDotAttention(nn.Module):
     """Soft Dot Attention.
@@ -6,24 +8,26 @@ class SoftDotAttention(nn.Module):
     Ref: http://www.aclweb.org/anthology/D15-1166
     Adapted from PyTorch OPEN NMT.
     """
-    def __init__(self, dim):
+    def __init__(self, dim, ctx_dim):
         """Initialize layer."""
         super(SoftDotAttention, self).__init__()
-        self.linear_in = nn.Linear(dim, dim, bias=False)
-        self.sm = nn.Softmax()
-        self.linear_out = nn.Linear(dim * 2, dim, bias=False)
+        self.linear_in = nn.Linear(dim, ctx_dim, bias=False)
+        self.sm = nn.Softmax(dim=-1)
+        self.linear_out = nn.Linear(ctx_dim*2, dim, bias=False)
         self.tanh = nn.Tanh()
 
 
-    def forward(self, input, context):
+    def forward(self, input, context, ctx_mask):
         """Propogate input through the network.
 
         input: batch x dim
         context: batch x sourceL x dim
         """
         # Get attention
+        input = self.linear_in(input)
         attn = torch.einsum('bsd,bd->bs', (context, input))
-        attn = self.sm(attn)#[batch, sourceL]
+        attn -= (1-ctx_mask) * 100000
+        attn = self.sm(attn).clone()#[batch, sourceL]
 
         weighted_context = torch.einsum('bs,bsd->bd',(attn, context))#[batch, dim]
 
@@ -47,9 +51,9 @@ class LSTMAttentionDot(nn.Module):
         self.input_weights = nn.Linear(input_size, 4 * hidden_size)
         self.hidden_weights = nn.Linear(hidden_size, 4 * hidden_size)
 
-        self.attention_layer = SoftDotAttention(hidden_size)
+        self.attention_layer = SoftDotAttention(hidden_size, input_size)
 
-    def forward(self, steps, hidden, ctx, ctx_mask=None):
+    def forward(self, steps, hidden, ctx, ctx_mask):
         """Propogate input through the network."""
         def recurrence(hidden):
             """Recurrence helper."""
@@ -64,12 +68,12 @@ class LSTMAttentionDot(nn.Module):
 
             cy = (forgetgate * cx) + (ingate * cellgate)
             hy = outgate * F.tanh(cy)  # n_b x hidden_dim
-            h_tilde, _ = self.attention_layer(hy, ctx)
+            h_tilde, _ = self.attention_layer(hy, ctx, ctx_mask)
 
             return h_tilde, cy
 
         output = []
-        for _ in steps:
+        for _ in range(steps):
             hidden = recurrence(hidden)
             output.append(hidden[0] if isinstance(hidden, tuple) else hidden)
 
@@ -101,6 +105,7 @@ class Ctx2SeqAttention(nn.Module):
     ):
         """Initialize model."""
         super(Ctx2SeqAttention, self).__init__()
+        self.num_steps = num_steps
         self.vocab_size = vocab_size
         self.src_hidden_dim = src_hidden_dim
         self.trg_hidden_dim = trg_hidden_dim
@@ -126,7 +131,7 @@ class Ctx2SeqAttention(nn.Module):
         self.decoder2vocab.bias.data.fill_(0)
 
 
-    def forward(self, ctx, state, ctx_mask=None):
+    def forward(self, ctx, state, ctx_mask):
         h_t, c_t = state.chunk(2, -1)
         decoder_init_state = nn.Tanh()(self.encoder2decoder(h_t))
 

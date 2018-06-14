@@ -22,7 +22,7 @@ class Discriminator(nn.Module):
 
 
     def forward(self, x, y):
-        ctx, state_x = self.encode_passage(x)
+        ctx, state_x, ctx_mask = self.encode_passage(x)
         batch_size = y.shape[0]
         num_questions = y.shape[1]
         y = y.view(batch_size*num_questions, -1)
@@ -33,12 +33,12 @@ class Discriminator(nn.Module):
         state_x = state_x.repeat(1, num_questions).view(batch_size*num_questions, -1)
         similarity = torch.sum(state_x * state_y, -1) * mask.float()
         similarity = similarity.view(batch_size, num_questions)
-        return similarity, torch.sum(mask), ctx, state_x
+        return similarity, torch.sum(mask), ctx, state_x, ctx_mask
 
 
     def compute_similarity(self, passage, logit):
         question_embed = torch.einsum('bij,jk->bik', (logit, self.embedding.weight))
-        _, state_x = self.encode_passage(passage)
+        _, state_x, _= self.encode_passage(passage)
         state_y = self.encode_question_embedding(question_embed)
         similarity = torch.sum(state_x * state_y, -1)
         return similarity
@@ -56,13 +56,13 @@ class Discriminator(nn.Module):
         dense = self.passage_dense(encoding)
         weight_dim = dense.shape[-1]
         coref = torch.bmm(dense, dense.transpose(1, 2)) / (weight_dim**0.5)
-        mask = (input != 0).unsqueeze(1).float()
-        coref -= (1-mask) * 10000
+        mask = (input != 0).float()
+        coref -= (1-mask.unsqueeze(1)) * 100000
         alpha = nn.functional.softmax(coref, -1)
         context = torch.bmm(alpha, encoding)
         ctx, (state_h, state_c) = self.passage_encoder(context)
         state = torch.cat([state_h.transpose(0, 1), state_c.transpose(0, 1)], -1).view(embed.shape[0], -1)
-        return ctx, state
+        return ctx, state, mask
 
 
     def encode_question_embedding(self, embed):
@@ -108,11 +108,11 @@ class Discriminator(nn.Module):
 class Generator(decoder.Ctx2SeqAttention):
     def __init__(self, vocab_size):
         super(Generator, self).__init__(
-            ctx_dim=config.encoder_hidden_dim,
+            ctx_dim=config.encoder_hidden_dim*2,
             num_steps=config.max_question_len,
-            vocab_size=config.char_vocab_size,
-            src_hidden_dim=config.encoder_hidden_dim,
-            trg_hidden_dim=config.decoder_hidden_dim,
+            vocab_size=vocab_size,
+            src_hidden_dim=config.dense_vector_dim,
+            trg_hidden_dim=config.dense_vector_dim,
             attention_mode='dot',
             batch_size=config.batch_size,
             bidirectional=True,
@@ -124,8 +124,8 @@ class Generator(decoder.Ctx2SeqAttention):
         )
 
 
-    def forward(self, ctx, state):
-        decoder_logit = nn.functional.softmax(super(Generator, self).forward(ctx, state), -1).clone()
+    def forward(self, ctx, state, ctx_mask):
+        decoder_logit = nn.functional.softmax(super(Generator, self).forward(ctx, state, ctx_mask), -1).clone()
         #decoder_logit[:,:,config.EOS_ID] = 0
         return decoder_logit
 
