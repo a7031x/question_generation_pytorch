@@ -55,9 +55,11 @@ def run_discriminator_epoch(generator, discriminator, feeder, criterion, optimiz
     return loss
 
 
-def run_generator_epoch(generator, discriminator, feeder, criterion, optimizer, threshold):
+def run_generator_epoch(generator, discriminator, feeder, criterion, optimizer, threshold, batches):
     loss = 100
-    while loss >= threshold:
+    ibatch = 0
+    while loss >= threshold and ibatch <= batches:
+        ibatch += 1
         pids, qids, _, _ = feeder.next(align=False)
         batch_size = len(pids)
         x = [[config.SOS_ID]+s+[config.EOS_ID] for s in pids]
@@ -99,7 +101,7 @@ def train(auto_stop, steps=50, threshold=0.5):
     while True:
         loss = run_discriminator_epoch(generator if loss < threshold else None, discriminator, discriminator_feeder, criterion, discriminator_optimizer, steps)
         if loss < threshold:
-            run_generator_epoch(generator, discriminator, generator_feeder, criterion, generator_optimizer, 0.4)
+            run_generator_epoch(generator, discriminator, generator_feeder, criterion, generator_optimizer, 0.2, 100)
         utils.mkdir(config.checkpoint_folder)
         torch.save({
             'discriminator': discriminator.state_dict(),
