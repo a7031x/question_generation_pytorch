@@ -63,14 +63,16 @@ def run_generator_epoch(generator, discriminator, feeder, criterion, optimizer, 
         pids, qids, labels, _ = feeder.next(align=True)
         batch_size = len(pids)
 
+        optimizer.zero_grad()
+
         x = torch.tensor(pids).cuda()
         ctx, state, ctx_mask = discriminator.encode_passage(x)
         question_logit = generator(ctx, state, ctx_mask)
         gids = question_logit.argmax(-1).tolist()
         passage_similarity = discriminator.compute_similarity(x, question_logit)
         label = torch.tensor([1]*batch_size).cuda().float()
-        optimizer.zero_grad()
-        passage_loss = criterion(passage_similarity, label)
+        passage_loss = criterion(passage_similarity, label) / batch_size
+        passage_loss.backward(retain_graph=True)
 
         new_qids = []
         new_labels = []
@@ -82,17 +84,17 @@ def run_generator_epoch(generator, discriminator, feeder, criterion, optimizer, 
         y = torch.tensor(new_qids).cuda()
         question_similarity = discriminator.compute_questions_similarity(y, question_logit)
         weight = torch.tensor(new_labels).cuda()
-        question_loss = torch.nn.BCEWithLogitsLoss(weight=weight, size_average=False)(question_similarity, weight)
+        question_loss = torch.nn.BCEWithLogitsLoss(weight=weight.float(), size_average=False)(question_similarity, weight.float())
+        question_loss.backward()
 
         loss = passage_loss + question_loss
-        loss.backward()
         optimizer.step()
-        loss, passage_similarity = (loss/batch_size).tolist(), torch.sigmoid(passage_similarity).tolist()
-        print_prediction(feeder, similarity, [q[0] for q in qids], gids, label)
+        loss, passage_similarity = loss.tolist(), torch.sigmoid(passage_similarity).tolist()
+        print_prediction(feeder, passage_similarity, [q[0] for q in qids], gids, label)
         print('------ITERATION {}, {}/{}, loss: {:>.4F}+{:>.4F}={:>.4F}'.format(feeder.iteration, feeder.cursor, feeder.size, passage_loss, question_loss, loss))
 
 
-def train(auto_stop, steps=50, threshold=0.14):
+def train(auto_stop, steps=50, threshold=0.2):
     dataset = Dataset()
     discriminator_feeder = TrainFeeder(dataset)
     generator_feeder = TrainFeeder(dataset)
