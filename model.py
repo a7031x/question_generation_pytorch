@@ -36,15 +36,21 @@ class Discriminator(nn.Module):
         return similarity, torch.sum(mask), ctx, state_x, ctx_mask
 
 
-    def compute_similarity(self, passage, logit):
+    def compute_similarity(self, passage, questions, logit):
         question_embed = torch.einsum('bij,jk->bik', (logit, self.embedding.weight))
+        passage_similarity = self.compute_passage_similarity(passage, question_embed)
+        question_similarity = self.compute_questions_similarity(questions, question_embed)
+        return passage_similarity, question_similarity
+
+
+    def compute_passage_similarity(self, passage, question_embed):
         _, state_x, _= self.encode_passage(passage)
         state_y = self.encode_question_embedding(question_embed)
         similarity = torch.sum(state_x * state_y, -1)
         return similarity
 
 
-    def compute_questions_similarity(self, questions, logit):
+    def compute_questions_similarity(self, questions, question_embed):
         batch_size = questions.shape[0]
         num_questions = questions.shape[1]
         y = questions.view(batch_size*num_questions, -1)
@@ -52,8 +58,7 @@ class Discriminator(nn.Module):
         mask = (length != 0).float()
         state_y = self.encode_question(y)
 
-        logit_embed = torch.einsum('bij,jk->bik', (logit, self.embedding.weight))
-        state_logit = self.encode_question_embedding(logit_embed)
+        state_logit = self.encode_question_embedding(question_embed)
         tiled_state_logit = state_logit.repeat(1, num_questions).view(batch_size*num_questions, -1)
         
         similarity = torch.sum(tiled_state_logit * state_y, -1) * mask
