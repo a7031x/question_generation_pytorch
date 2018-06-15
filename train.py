@@ -96,7 +96,7 @@ def train(auto_stop, steps=50, threshold=0.2):
     discriminator = Discriminator(len(dataset.ci2n)).cuda()
     generator = Generator(len(dataset.ci2n)).cuda()
     discriminator_optimizer = torch.optim.Adam(discriminator.parameters(), lr=1e-4)
-    generator_optimizer = torch.optim.Adam(generator.parameters(), lr=1e-4)
+    generator_optimizer = torch.optim.Adam(generator.parameters(), lr=1e-3)
     feeder.prepare('train')
     if os.path.isfile(ckpt_path):
         ckpt = torch.load(ckpt_path)
