@@ -50,7 +50,7 @@ def gan_loss(criterion, passage_similarity, question_similarity, labels, target)
     new_labels = [[x for x in r if x == 1] for r in labels]
     new_labels = align2d(new_labels)
     weight = tensor(new_labels if target == 1 else np.zeros_like(new_labels)).float()
-    question_loss = (criterion(question_similarity, weight) * tensor(new_labels).float()).sum()
+    question_loss = (criterion(question_similarity, weight) * tensor(new_labels).float()).sum() / tensor(new_labels).sum().float()
     return passage_loss, question_loss
 
 
