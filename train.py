@@ -1,6 +1,5 @@
 from data import Dataset, TrainFeeder, align2d, align3d
 from model import Discriminator, Generator
-import torch.tensor as tensor
 import numpy as np
 import os
 import config
@@ -8,6 +7,10 @@ import torch
 import utils
 
 ckpt_path = os.path.join(config.checkpoint_folder, 'model.ckpt')
+
+def tensor(x):
+    return torch.tensor(x).cuda()
+
 
 def print_prediction(feeder, similarity, pids, qids, gids, labels, number=None):
     if number is None:
@@ -41,12 +44,12 @@ def generator_similarities(generator, discriminator, pids, qids, labels, ctx=Non
 
 def gan_loss(criterion, passage_similarity, question_similarity, labels, target):
     batch_size = passage_similarity.shape[0]
-    passage_label = torch.tensor([target]*batch_size).float()
+    passage_label = tensor([target]*batch_size).float()
     passage_loss = criterion(passage_similarity, passage_label).sum() / batch_size
 
     new_labels = [[x for x in r if x == 1] for r in labels]
     new_labels = align2d(new_labels)
-    weight = torch.tensor(new_labels if target == 1 else np.zeros_like(new_labels)).float()
+    weight = tensor(new_labels if target == 1 else np.zeros_like(new_labels)).float()
     question_loss = (criterion(question_similarity, weight) * tensor(new_labels).float()).sum()
     return passage_loss, question_loss
 
@@ -85,14 +88,13 @@ def run_epoch(generator, discriminator, feeder, generator_optimizer, discriminat
         print_prediction(feeder, similarity, pids, qids, gids, labels, 1)
         print('------ITERATION {}, {}/{}, d_loss: {:>.4F}+{:>.4F}={:>.4F}, {:>.4F}+{:>.4F}={:>.4F}'.format(
             feeder.iteration, feeder.cursor, feeder.size, discriminator_loss, generator_loss, d_loss, passage_loss, question_loss, g_loss))
-    return loss
 
 
 def train(auto_stop, steps=50, threshold=0.2):
     dataset = Dataset()
     feeder = TrainFeeder(dataset)
-    discriminator = Discriminator(len(dataset.ci2n))#.cuda()
-    generator = Generator(len(dataset.ci2n))#.cuda()
+    discriminator = Discriminator(len(dataset.ci2n)).cuda()
+    generator = Generator(len(dataset.ci2n)).cuda()
     discriminator_optimizer = torch.optim.Adam(discriminator.parameters(), lr=1e-4)
     generator_optimizer = torch.optim.Adam(generator.parameters(), lr=1e-4)
     feeder.prepare('train')
