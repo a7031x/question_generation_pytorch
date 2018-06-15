@@ -60,24 +60,39 @@ def run_generator_epoch(generator, discriminator, feeder, criterion, optimizer, 
     ibatch = 0
     while loss >= threshold and ibatch <= batches:
         ibatch += 1
-        pids, qids, _, _ = feeder.next(align=True)
+        pids, qids, labels, _ = feeder.next(align=True)
         batch_size = len(pids)
+
         x = torch.tensor(pids).cuda()
         ctx, state, ctx_mask = discriminator.encode_passage(x)
         question_logit = generator(ctx, state, ctx_mask)
         gids = question_logit.argmax(-1).tolist()
-        similarity = discriminator.compute_similarity(x, question_logit)
+        passage_similarity = discriminator.compute_similarity(x, question_logit)
         label = torch.tensor([1]*batch_size).cuda().float()
         optimizer.zero_grad()
-        loss = criterion(similarity, label)
+        passage_loss = criterion(passage_similarity, label)
+
+        new_qids = []
+        new_labels = []
+        for questions, ls in zip(qids, labels): 
+            new_qids.append([[x for x in q if x != config.NULL_ID] for q,l in zip(questions, ls) if l == 1])
+            new_labels.append([1 for l in ls if l == 1])
+        new_qids = align3d(new_qids)
+        new_labels = align2d(new_labels)
+        y = torch.tensor(new_qids).cuda()
+        question_similarity = discriminator.compute_questions_similarity(y, question_logit)
+        weight = torch.tensor(new_labels).cuda()
+        question_loss = torch.nn.BCEWithLogitsLoss(weight=weight, size_average=False)(question_similarity, weight)
+
+        loss = passage_loss + question_loss
         loss.backward()
         optimizer.step()
-        loss, similarity = (loss/batch_size).tolist(), torch.sigmoid(similarity).tolist()
+        loss, passage_similarity = (loss/batch_size).tolist(), torch.sigmoid(passage_similarity).tolist()
         print_prediction(feeder, similarity, [q[0] for q in qids], gids, label)
-        print('------ITERATION {}, {}/{}, loss: {:>.4F}'.format(feeder.iteration, feeder.cursor, feeder.size, loss))
+        print('------ITERATION {}, {}/{}, loss: {:>.4F}+{:>.4F}={:>.4F}'.format(feeder.iteration, feeder.cursor, feeder.size, passage_loss, question_loss, loss))
 
 
-def train(auto_stop, steps=50, threshold=0.5):
+def train(auto_stop, steps=50, threshold=0.14):
     dataset = Dataset()
     discriminator_feeder = TrainFeeder(dataset)
     generator_feeder = TrainFeeder(dataset)
@@ -101,7 +116,7 @@ def train(auto_stop, steps=50, threshold=0.5):
         #run_generator_epoch(generator, discriminator, generator_feeder, criterion, generator_optimizer, 0.2, 100)
         loss = run_discriminator_epoch(generator if loss < threshold else None, discriminator, discriminator_feeder, criterion, discriminator_optimizer, steps)
         if loss < threshold:
-            run_generator_epoch(generator, discriminator, generator_feeder, criterion, generator_optimizer, 0.2, 100)
+            run_generator_epoch(generator, discriminator, generator_feeder, criterion, generator_optimizer, 0.1, 1000)
         utils.mkdir(config.checkpoint_folder)
         torch.save({
             'discriminator': discriminator.state_dict(),

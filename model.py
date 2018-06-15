@@ -44,6 +44,23 @@ class Discriminator(nn.Module):
         return similarity
 
 
+    def compute_questions_similarity(self, questions, logit):
+        batch_size = questions.shape[0]
+        num_questions = questions.shape[1]
+        y = questions.view(batch_size*num_questions, -1)
+        length = torch.sum(y != 0, -1)
+        mask = (length != 0).float()
+        state_y = self.encode_question(y)
+
+        logit_embed = torch.einsum('bij,jk->bik', (logit, self.embedding.weight))
+        state_logit = self.encode_question_embedding(logit_embed)
+        tiled_state_logit = state_logit.repeat(1, num_questions).view(batch_size*num_questions, -1)
+        
+        similarity = torch.sum(tiled_state_logit * state_y, -1) * mask
+        similarity = similarity.view(batch_size, num_questions)
+        return similarity
+        
+
     def encode_question(self, input):
         return self.encode_question_embedding(self.embedding(input))
 
