@@ -15,10 +15,10 @@ class Discriminator(nn.Module):
         self.question_conv0 = self.cnn_layers(config.num_question_encoder_layers, config.encoder_kernel_size0, config.conv_vector_dim)
         self.question_conv1 = self.cnn_layers(config.num_question_encoder_layers, config.encoder_kernel_size1, config.conv_vector_dim)
         self.question_gate = self.cnn_layers(config.num_passage_encoder_layers, config.encoder_kernel_size1, config.conv_vector_dim*2)
-        self.question_encoder = nn.LSTM(config.conv_vector_dim*2, config.encoder_hidden_dim, 2, bidirectional=True, batch_first=True)
+        self.question_encoder = nn.LSTM(config.conv_vector_dim*2, config.dense_vector_dim//8, 2, bidirectional=True, batch_first=True)
         self.encoder_dim = config.encoder_hidden_dim * 2
         self.passage_dense = nn.Linear(self.encoder_dim, config.dense_match_dim)
-        self.passage_encoder = nn.LSTM(config.conv_vector_dim*2, config.encoder_hidden_dim, 2, bidirectional=True, batch_first=True)
+        self.passage_encoder = nn.LSTM(config.conv_vector_dim*2, config.dense_vector_dim//8, 2, bidirectional=True, batch_first=True)
 
         self.state_dense0 = nn.Linear(config.dense_vector_dim*2, config.dense_vector_dim)
         self.state_dense1 = nn.Linear(config.dense_vector_dim*2, 2)

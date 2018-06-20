@@ -35,7 +35,7 @@ def run_discriminator_epoch(generator, discriminator, feeder, optimizer, batches
         x = func.tensor(pids)
         y = func.tensor(qids)
         similarity, similarity_mask, _, ctx, state, ctx_mask = discriminator(x, y)
-        discriminator_loss = func.sparse_softmax_loss(similarity, func.tensor(labels).float(), similarity_mask, reduce=True, size_average=True)
+        discriminator_loss = func.sparse_softmax_loss(similarity, func.tensor(labels), similarity_mask, reduce=True, size_average=True)
         if generator is not None:
             question_logit = generator(ctx, state, ctx_mask)
             generated_similarity = discriminator.passage_logit_similarity(x, question_logit)        
@@ -50,14 +50,14 @@ def run_discriminator_epoch(generator, discriminator, feeder, optimizer, batches
         loss.backward()
         optimizer.step()
         loss = loss.tolist()
-        similarity = torch.nn.functional.softmax(similarity, -1)[:, 1].tolist()
+        similarity = torch.nn.functional.softmax(similarity, -1)[:,:,1].tolist()
         print_prediction(feeder, similarity, pids, qids, labels, 1)
         print('------ITERATION {}, {}/{}, loss: {:>.4F}+{:>.4F}={:>.4F}'.format(
             feeder.iteration, feeder.cursor, feeder.size, discriminator_loss, generator_loss, loss))
     return loss
 
 
-def run_generator_epoch(generator, discriminator, feeder, criterion, optimizer, threshold, batches):
+def run_generator_epoch(generator, discriminator, feeder, optimizer, threshold, batches):
     loss = 100
     ibatch = 0
     while loss >= threshold and ibatch <= batches:
@@ -73,7 +73,7 @@ def run_generator_epoch(generator, discriminator, feeder, criterion, optimizer, 
         gids = question_logit.argmax(-1).tolist()
         passage_similarity = discriminator.passage_logit_similarity(x, question_logit)
         label = tensor([1]*batch_size).float()
-        passage_loss = criterion(passage_similarity, label) / batch_size
+        passage_loss = func.sparse_softmax_loss(passage_similarity, label, reduce=True) / batch_size
         passage_loss.backward(retain_graph=True)
 
         new_qids = []
@@ -86,7 +86,7 @@ def run_generator_epoch(generator, discriminator, feeder, criterion, optimizer, 
         y = tensor(new_qids)
         question_similarity = discriminator.compute_questions_similarity(y, question_logit)
         weight = tensor(new_labels)
-        question_loss = torch.nn.BCEWithLogitsLoss(weight=weight.float(), size_average=False)(question_similarity, weight.float())
+        question_loss = func.sparse_softmax_loss(question_similarity, weight, weight, reduce=True)
         question_loss.backward()
 
         loss = passage_loss + question_loss
@@ -102,7 +102,6 @@ def train(auto_stop, steps=50, threshold=0.2):
     generator_feeder = TrainFeeder(dataset)
     discriminator = Discriminator(len(dataset.ci2n)).cuda()
     generator = Generator(len(dataset.ci2n)).cuda()
-    criterion = torch.nn.BCEWithLogitsLoss(size_average=False)
     discriminator_optimizer = torch.optim.Adam(discriminator.parameters(), lr=1e-4)
     generator_optimizer = torch.optim.Adam(generator.parameters(), lr=1e-4)
     discriminator_feeder.prepare('train')
@@ -118,9 +117,9 @@ def train(auto_stop, steps=50, threshold=0.2):
     loss = 1
     while True:
         #run_generator_epoch(generator, discriminator, generator_feeder, criterion, generator_optimizer, 0.2, 100)
-        loss = run_discriminator_epoch(generator if loss < threshold else None, discriminator, discriminator_feeder, criterion, discriminator_optimizer, steps)
+        loss = run_discriminator_epoch(generator if loss < threshold else None, discriminator, discriminator_feeder, discriminator_optimizer, steps)
         if loss < threshold:
-            run_generator_epoch(generator, discriminator, generator_feeder, criterion, generator_optimizer, 0.1, 1000)
+            run_generator_epoch(generator, discriminator, generator_feeder, generator_optimizer, 0.1, 1000)
         utils.mkdir(config.checkpoint_folder)
         torch.save({
             'discriminator': discriminator.state_dict(),
