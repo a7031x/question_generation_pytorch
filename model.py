@@ -20,6 +20,9 @@ class Discriminator(nn.Module):
         self.passage_dense = nn.Linear(self.encoder_dim, config.dense_match_dim)
         self.passage_encoder = nn.LSTM(config.conv_vector_dim*2, config.encoder_hidden_dim, 2, bidirectional=True, batch_first=True)
 
+        self.state_dense0 = nn.Linear(config.dense_vector_dim*2, config.dense_vector_dim)
+        self.state_dense1 = nn.Linear(config.dense_vector_dim*2, 2)
+
 
     def forward(self, x, y):
         ctx, state_x, ctx_mask = self.encode_passage(x)
@@ -28,20 +31,30 @@ class Discriminator(nn.Module):
         y = y.view(batch_size*num_questions, -1)
         mask = y != 0
         length = torch.sum(mask, -1)
-        mask = length != 0
+        mask = (length != 0).float()
         state_y = self.encode_question(y)
         tiled_state_x = state_x.repeat(1, num_questions).view(batch_size*num_questions, -1)
-        similarity = torch.sum(tiled_state_x * state_y, -1) * mask.float()
-        similarity = similarity.view(batch_size, num_questions)
-        return similarity, torch.sum(mask), ctx, state_x, ctx_mask
+        similarity = self.state_similarity(tiled_state_x, state_y)
+        similarity = similarity * mask.unsqueeze(-1)
+        similarity = similarity.view(batch_size, num_questions, 2)
+        return similarity, mask.view(batch_size, num_questions), torch.sum(mask), ctx, state_x, ctx_mask
 
 
-    def compute_similarity(self, passage, logit):
+    def passage_logit_similarity(self, passage, logit):
         question_embed = torch.einsum('bij,jk->bik', (logit, self.embedding.weight))
         _, state_x, _= self.encode_passage(passage)
         state_y = self.encode_question_embedding(question_embed)
-        similarity = torch.sum(state_x * state_y, -1)
+        similarity = self.state_similarity(state_x, state_y)
         return similarity
+
+
+    def state_similarity(self, state_x, state_y):
+        state_cat = torch.cat([state_x, state_y], -1)
+        state_l0 = self.state_dense0(state_cat).tanh()
+        state_cat = torch.cat([state_l0, state_x.tanh()*state_y.tanh()], -1)
+        state_l1 = self.state_dense1(state_cat)
+        #similarity = nn.functional.softmax(state_l1, dim=-1)[:, 1]
+        return state_l1#, similarity
 
 
     def compute_questions_similarity(self, questions, logit):
@@ -56,8 +69,9 @@ class Discriminator(nn.Module):
         state_logit = self.encode_question_embedding(logit_embed)
         tiled_state_logit = state_logit.repeat(1, num_questions).view(batch_size*num_questions, -1)
         
-        similarity = torch.sum(tiled_state_logit * state_y, -1) * mask
-        similarity = similarity.view(batch_size, num_questions)
+        similarity = self.state_similarity(tiled_state_logit, state_y)
+        similarity = similarity * mask.unsqueeze(-1)
+        similarity = similarity.view(batch_size, num_questions, 2)
         return similarity
         
 

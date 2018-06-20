@@ -5,6 +5,7 @@ import os
 import config
 import torch
 import utils
+import func
 
 ckpt_path = os.path.join(config.checkpoint_folder, 'model.ckpt')
 
@@ -25,21 +26,21 @@ def print_prediction(feeder, similarity, pids, qids, labels, number=None):
             print(' {} {:>.4F}: {}'.format(lab, sim, question))
 
 
-def run_discriminator_epoch(generator, discriminator, feeder, criterion, optimizer, batches):
-    nbatch = 0 
+def run_discriminator_epoch(generator, discriminator, feeder, optimizer, batches):
+    nbatch = 0
     while nbatch < batches:
         pids, qids, labels, _ = feeder.next()
         batch_size = len(pids)
         nbatch += 1
-        x = torch.tensor(pids).cuda()
-        y = torch.tensor(qids).cuda()
-        similarity, count, ctx, state, ctx_mask = discriminator(x, y)
-        discriminator_loss = criterion(similarity, torch.tensor(labels).cuda().float())/count.float()
+        x = func.tensor(pids)
+        y = func.tensor(qids)
+        similarity, similarity_mask, _, ctx, state, ctx_mask = discriminator(x, y)
+        discriminator_loss = func.sparse_softmax_loss(similarity, func.tensor(labels).float(), similarity_mask, reduce=True, size_average=True)
         if generator is not None:
             question_logit = generator(ctx, state, ctx_mask)
-            generated_similarity = discriminator.compute_similarity(x, question_logit)        
-            generation_label = torch.tensor([0]*batch_size).cuda().float()
-            generator_loss = criterion(generated_similarity, generation_label)/torch.tensor(batch_size).cuda().float()
+            generated_similarity = discriminator.passage_logit_similarity(x, question_logit)        
+            generation_label = func.tensor([0]*batch_size).float()
+            generator_loss = func.sparse_softmax_loss(generated_similarity, generation_label, reduce=True) / batch_size
             factor = min(((discriminator_loss / generator_loss) * 0.1).tolist(), 1)
             generator_loss *= factor
         else:
@@ -48,7 +49,8 @@ def run_discriminator_epoch(generator, discriminator, feeder, criterion, optimiz
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        loss, similarity = loss.tolist(), torch.sigmoid(similarity).tolist()
+        loss = loss.tolist()
+        similarity = torch.nn.functional.softmax(similarity, -1)[:, 1].tolist()
         print_prediction(feeder, similarity, pids, qids, labels, 1)
         print('------ITERATION {}, {}/{}, loss: {:>.4F}+{:>.4F}={:>.4F}'.format(
             feeder.iteration, feeder.cursor, feeder.size, discriminator_loss, generator_loss, loss))
@@ -65,12 +67,12 @@ def run_generator_epoch(generator, discriminator, feeder, criterion, optimizer, 
 
         optimizer.zero_grad()
 
-        x = torch.tensor(pids).cuda()
+        x = tensor(pids)
         ctx, state, ctx_mask = discriminator.encode_passage(x)
         question_logit = generator(ctx, state, ctx_mask)
         gids = question_logit.argmax(-1).tolist()
-        passage_similarity = discriminator.compute_similarity(x, question_logit)
-        label = torch.tensor([1]*batch_size).cuda().float()
+        passage_similarity = discriminator.passage_logit_similarity(x, question_logit)
+        label = tensor([1]*batch_size).float()
         passage_loss = criterion(passage_similarity, label) / batch_size
         passage_loss.backward(retain_graph=True)
 
@@ -81,9 +83,9 @@ def run_generator_epoch(generator, discriminator, feeder, criterion, optimizer, 
             new_labels.append([1 for l in ls if l == 1])
         new_qids = align3d(new_qids)
         new_labels = align2d(new_labels)
-        y = torch.tensor(new_qids).cuda()
+        y = tensor(new_qids)
         question_similarity = discriminator.compute_questions_similarity(y, question_logit)
-        weight = torch.tensor(new_labels).cuda()
+        weight = tensor(new_labels)
         question_loss = torch.nn.BCEWithLogitsLoss(weight=weight.float(), size_average=False)(question_similarity, weight.float())
         question_loss.backward()
 
