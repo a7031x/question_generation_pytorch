@@ -67,13 +67,13 @@ def run_generator_epoch(generator, discriminator, feeder, optimizer, threshold, 
 
         optimizer.zero_grad()
 
-        x = tensor(pids)
+        x = func.tensor(pids)
         ctx, state, ctx_mask = discriminator.encode_passage(x)
         question_logit = generator(ctx, state, ctx_mask)
         gids = question_logit.argmax(-1).tolist()
         passage_similarity = discriminator.passage_logit_similarity(x, question_logit)
-        label = tensor([1]*batch_size).float()
-        passage_loss = func.sparse_softmax_loss(passage_similarity, label, reduce=True) / batch_size
+        label = func.tensor([1]*batch_size)
+        passage_loss = func.sparse_softmax_loss(passage_similarity, label, reduce=True) / func.tensor(batch_size).float()
         passage_loss.backward(retain_graph=True)
 
         new_qids = []
@@ -83,15 +83,16 @@ def run_generator_epoch(generator, discriminator, feeder, optimizer, threshold, 
             new_labels.append([1 for l in ls if l == 1])
         new_qids = align3d(new_qids)
         new_labels = align2d(new_labels)
-        y = tensor(new_qids)
+        y = func.tensor(new_qids)
         question_similarity = discriminator.compute_questions_similarity(y, question_logit)
-        weight = tensor(new_labels)
-        question_loss = func.sparse_softmax_loss(question_similarity, weight, weight, reduce=True)
+        weight = func.tensor(new_labels)
+        question_loss = func.sparse_softmax_loss(question_similarity, weight, weight, reduce=True, size_average=True)
         question_loss.backward()
 
         loss = passage_loss + question_loss
         optimizer.step()
-        loss, passage_similarity = loss.tolist(), torch.sigmoid(passage_similarity).tolist()
+        loss = loss.tolist()
+        passage_similarity = torch.nn.functional.softmax(passage_similarity, -1)[:,1].tolist()
         print_prediction(feeder, passage_similarity, [q[0] for q in qids], gids, label)
         print('------ITERATION {}, {}/{}, loss: {:>.4F}+{:>.4F}={:>.4F}'.format(feeder.iteration, feeder.cursor, feeder.size, passage_loss, question_loss, loss))
 

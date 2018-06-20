@@ -139,11 +139,11 @@ class Discriminator(nn.Module):
 class Generator(decoder.Ctx2SeqAttention):
     def __init__(self, vocab_size):
         super(Generator, self).__init__(
-            ctx_dim=config.encoder_hidden_dim*2,
+            ctx_dim=config.encoder_hidden_dim,
             num_steps=config.max_question_len,
             vocab_size=vocab_size,
-            src_hidden_dim=config.dense_vector_dim,
-            trg_hidden_dim=config.dense_vector_dim,
+            src_hidden_dim=config.encoder_hidden_dim*2,
+            trg_hidden_dim=config.encoder_hidden_dim*2,
             attention_mode='dot',
             batch_size=config.batch_size,
             bidirectional=True,
@@ -156,7 +156,8 @@ class Generator(decoder.Ctx2SeqAttention):
 
 
     def forward(self, ctx, state, ctx_mask):
-        decoder_logit = nn.functional.softmax(super(Generator, self).forward(ctx, state, ctx_mask), -1).clone()
+        logit = super(Generator, self).forward(ctx, state, ctx_mask)
+        decoder_logit = nn.functional.softmax(logit, -1).clone()
         return decoder_logit
 
 

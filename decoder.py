@@ -24,14 +24,14 @@ class SoftDotAttention(nn.Module):
         context: batch x sourceL x dim
         """
         # Get attention
-        input = self.linear_in(input)
-        attn = torch.einsum('bsd,bd->bs', (context, input))
+        dense_input = self.linear_in(input)
+        attn = torch.einsum('bsd,bd->bs', (context, dense_input))
         attn -= (1-ctx_mask) * 100000
         attn = self.sm(attn).clone()#[batch, sourceL]
 
         weighted_context = torch.einsum('bs,bsd->bd',(attn, context))#[batch, dim]
 
-        h_tilde = torch.cat((weighted_context, input), 1)#[batch, dim*2]
+        h_tilde = torch.cat((weighted_context, dense_input), 1)#[batch, dim*2]
         h_tilde = self.tanh(self.linear_out(h_tilde))#[batch, dim]
 
         return h_tilde, attn
@@ -133,7 +133,7 @@ class Ctx2SeqAttention(nn.Module):
 
     def forward(self, ctx, state, ctx_mask):
         h_t, c_t = state.chunk(2, -1)
-        decoder_init_state = nn.Tanh()(self.encoder2decoder(h_t))
+        decoder_init_state = self.encoder2decoder(h_t).tanh()
 
         trg_h, (_, _) = self.decoder(
             self.num_steps,

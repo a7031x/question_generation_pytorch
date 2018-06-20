@@ -14,9 +14,9 @@ def sparse_softmax_loss(logit, target, mask=1, size_average=False, reduce=False)
     logit = torch.nn.functional.log_softmax(logit, -1)
     for dim in range(len(logit.shape)-1, 1, -1):
         logit = logit.transpose(dim, dim-1)
-    loss = torch.nn.NLLLoss(reduce=False, size_average=False)(logit, target) * mask.float()
+    loss = torch.nn.NLLLoss(reduce=False, size_average=False)(logit, target) * tensor(mask).float()
     if reduce:
         loss = loss.sum()
     if size_average:
-        loss = loss / tensor(mask).sum()
+        loss = loss / tensor(mask).sum().float()
     return loss
