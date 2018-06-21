@@ -41,6 +41,19 @@ def prepare_dataset_with_document(source, target):
     utils.write_all_lines(target, lines)
 
 
+def prepare_dataset_with_question_answers(source, target):
+    lines = []
+    for line in utils.read_all_lines(source):
+        sample = json.loads(line)
+        question = sample['question']
+        for answer in sample['answers']:
+            if question[:2] in answer[:5]:
+                lines.append(answer)
+                lines.append(question)
+                lines.append('<P>')
+    utils.write_all_lines(target, lines)
+
+
 def rip_marks(text):
     r = re.sub(r'< ([A-Za-z0-9 /\"=]+) >', r'', text)
     r = re.sub(r'& [a-zA-Z]+ ;', r'', r)
@@ -52,6 +65,6 @@ def rip_marks(text):
 
 
 if __name__ == '__main__':
-    prepare_dataset_with_document(config.raw_train_file, config.train_file)
-    prepare_dataset_with_document(config.raw_dev_file, config.dev_file)
+    prepare_dataset_with_question_answers(config.raw_train_file, config.train_file)
+    prepare_dataset_with_question_answers(config.raw_dev_file, config.dev_file)
     create_vocab(config.train_file)
