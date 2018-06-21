@@ -39,7 +39,7 @@ def run_discriminator_epoch(generator, discriminator, feeder, optimizer, batches
         if generator is not None:
             question_logit = generator(ctx, state, ctx_mask)
             generated_similarity = discriminator.passage_logit_similarity(x, question_logit)        
-            generation_label = func.tensor([0]*batch_size).float()
+            generation_label = func.tensor([0]*batch_size)
             generator_loss = func.sparse_softmax_loss(generated_similarity, generation_label, reduce=True) / batch_size
             factor = min(((discriminator_loss / generator_loss) * 0.1).tolist(), 1)
             generator_loss *= factor
